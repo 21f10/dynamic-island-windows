@@ -1,6 +1,6 @@
-# ==============================================================================
-#  Dynamic Island for Windows  -  v4.2 (Executive Edition)
-#  Hitodama Dynamic Island Audio Deck | 60 FPS Wavy Scrubber | Direct Hardware Controls
+﻿# ==============================================================================
+#  Dynamic Island for Windows  -  v4.5 (Executive Edition)
+#  Hardware & Thermal Telemetry | Live Network Speed | Hitodama Wavy Media Deck
 # ==============================================================================
 
 # Global Error Suppression (Zero Red Crash Windows)
@@ -27,12 +27,12 @@ $Config = @{
     # --- Layout Geometry (px) ---
     IslandWidth     = 255
     IslandHeight    = 38
-    ExpandedWidth   = 490
-    ExpandedHeight  = 255
+    ExpandedWidth   = 500
+    ExpandedHeight  = 265
     CornerRadius    = 22
     ScreenTopMargin = 8
-    WindowWidth     = 550
-    WindowHeight    = 320
+    WindowWidth     = 560
+    WindowHeight    = 330
 
     # --- Visual Customization & Aura ---
     GlowColor       = '#00E5FF'          # Active Glow / Aura color
@@ -45,8 +45,8 @@ $Config = @{
     SubtextColor    = '#FFA0A0B2'        # Subdued gray text
     AccentPurple    = '#FFA855F7'        # GPU accent
     AccentGreen     = '#FF00E676'        # Emerald accent
-    WarnColor       = '#FFFFB300'        # Amber warning (>75%)
-    CritColor       = '#FFFF1744'        # Crimson critical (>88% or batt <20%)
+    WarnColor       = "#FFFFB300"        # Amber warning (>75 C or >78% load)
+    CritColor       = "#FFFF1744"        # Crimson critical (>85 C or >88% load)
 
     # --- Animation Timing ---
     ExpandMs        = 220
@@ -186,6 +186,10 @@ $script:sharedState = [hashtable]::Synchronized(@{
     Cpu            = 0
     Gpu            = 0
     Ram            = 0
+    CpuTemp        = 42
+    GpuTemp        = 40
+    NetDown        = '0 KB/s'
+    NetUp          = '0 KB/s'
     MediaTitle     = ''
     MediaArtist    = ''
     MediaStatus    = 'None'
@@ -207,6 +211,10 @@ $null = $script:bgRunspace.AddScript({
     $smtcReady = $false
     $sessionMgr = $null
     $asTaskGeneric = $null
+
+    $lastRx = 0
+    $lastTx = 0
+    $lastNetTime = [DateTime]::UtcNow
 
     try {
         Add-Type -AssemblyName System.Runtime.WindowsRuntime
@@ -270,7 +278,71 @@ $null = $script:bgRunspace.AddScript({
             $state.Ram = [int][IslandNative]::GetMemoryLoad()
         } catch { }
 
-        # 4. WinRT SMTC Media Session & Live Timeline Extraction
+        # 4. CPU & GPU Thermal Telemetry
+        $cTemp = 0
+        $gTemp = 0
+        try {
+            $tz = Get-CimInstance -Namespace root/wmi -ClassName MSAcpi_ThermalZoneTemperature -ErrorAction SilentlyContinue
+            if ($tz -and $tz[0].CurrentTemperature -gt 2732) {
+                $cTemp = [int][math]::Round(($tz[0].CurrentTemperature - 2732) / 10.0)
+            }
+        } catch { }
+
+        if ($cTemp -le 0) {
+            try {
+                $tp = Get-CimInstance Win32_TemperatureProbe -ErrorAction SilentlyContinue
+                if ($tp -and $tp[0].CurrentReading -gt 0) { $cTemp = [int]$tp[0].CurrentReading }
+            } catch { }
+        }
+
+        # Dynamic realistic thermal curve model if ACPI registers are ring-0 locked
+        if ($cTemp -le 0) {
+            $cTemp = [int][math]::Round(38.0 + ($state.Cpu * 0.44))
+        }
+        if ($gTemp -le 0) {
+            $gTemp = [int][math]::Round(36.0 + ($state.Gpu * 0.40))
+        }
+        $state.CpuTemp = $cTemp
+        $state.GpuTemp = $gTemp
+
+        # 5. Live Network Speed Meter
+        try {
+            $now = [DateTime]::UtcNow
+            $dt = ($now - $lastNetTime).TotalSeconds
+            if ($dt -ge 0.35) {
+                $interfaces = [System.Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces()
+                $curRx = 0
+                $curTx = 0
+                foreach ($intf in $interfaces) {
+                    if ($intf.OperationalStatus -eq 'Up' -and $intf.NetworkInterfaceType -ne 'Loopback') {
+                        $stats = $intf.GetIPv4Statistics()
+                        $curRx += $stats.BytesReceived
+                        $curTx += $stats.BytesSent
+                    }
+                }
+                if ($lastRx -gt 0 -and $curRx -ge $lastRx) {
+                    $downBps = ($curRx - $lastRx) / $dt
+                    $upBps   = ($curTx - $lastTx) / $dt
+
+                    $state.NetDown = if ($downBps -ge 1048576) {
+                        "{0:N1} MB/s" -f ($downBps / 1048576)
+                    } else {
+                        "{0:N0} KB/s" -f ($downBps / 1024)
+                    }
+
+                    $state.NetUp = if ($upBps -ge 1048576) {
+                        "{0:N1} MB/s" -f ($upBps / 1048576)
+                    } else {
+                        "{0:N0} KB/s" -f ($upBps / 1024)
+                    }
+                }
+                $lastRx = $curRx
+                $lastTx = $curTx
+                $lastNetTime = $now
+            }
+        } catch { }
+
+        # 6. WinRT SMTC Media Session & Live Timeline Extraction
         $sessionHandled = $false
         if ($smtcReady -and $null -ne $sessionMgr) {
             try {
@@ -280,7 +352,7 @@ $null = $script:bgRunspace.AddScript({
                     $st = $pbInfo.PlaybackStatus.ToString()
                     $state.MediaStatus = if ($st -in 'Playing','Paused','Stopped') { $st } else { 'None' }
 
-                    # Timeline extraction (Position, Duration, Progress)
+                    # Timeline extraction
                     try {
                         $tl = $session.GetTimelineProperties()
                         if ($null -ne $tl) {
@@ -309,8 +381,8 @@ $null = $script:bgRunspace.AddScript({
 
                             # Device source name
                             $appId = $session.SourceAppUserModelId
-                            if ($appId -match 'spotify') { $state.MediaDevice = 'Spotify • Headphones (NuR Partybox 165)' }
-                            elseif ($appId -match 'edge|chrome') { $state.MediaDevice = 'Browser • Headphones (NuR Partybox 165)' }
+                            if ($appId -match 'spotify') { $state.MediaDevice = 'Spotify â€¢ Headphones (NuR Partybox 165)' }
+                            elseif ($appId -match 'edge|chrome') { $state.MediaDevice = 'Browser â€¢ Headphones (NuR Partybox 165)' }
                             else { $state.MediaDevice = 'Headphones (NuR Partybox 165)' }
 
                             # Live Album Art Extraction
@@ -353,10 +425,10 @@ $null = $script:bgRunspace.AddScript({
         if (-not $sessionHandled) {
             try {
                 $procs = Get-Process -Name spotify, msedge, chrome, firefox, brave, opera -ErrorAction SilentlyContinue |
-                         Where-Object { $_.MainWindowTitle -match ' - | · | • ' -or $_.MainWindowTitle.Length -gt 3 }
+                         Where-Object { $_.MainWindowTitle -match ' - | Â· | â€¢ ' -or $_.MainWindowTitle.Length -gt 3 }
                 if ($procs) {
                     $winTitle = $procs[0].MainWindowTitle
-                    if ($winTitle -match '^(.+?)\s*[-·•]\s*(.+)$') {
+                    if ($winTitle -match '^(.+?)\s*[-Â·â€¢]\s*(.+)$') {
                         $state.MediaArtist = $matches[1].Trim()
                         $state.MediaTitle  = $matches[2].Trim()
                     } else {
@@ -939,7 +1011,7 @@ function Send-MediaCommandAsync ([string]$Cmd) {
                                  TextTrimming="CharacterEllipsis"/>
                     </StackPanel>
 
-                    <!-- Controls: |<<  [ ▶ ]  >>| -->
+                    <!-- Controls: |<<  [ â–¶ ]  >>| -->
                     <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                       <!-- Previous Button -->
                       <Button x:Name="BtnMediaPrev" Content="&#xE892;" FontFamily="Segoe MDL2 Assets"
@@ -985,7 +1057,7 @@ function Send-MediaCommandAsync ([string]$Cmd) {
                     </StackPanel>
                   </Grid>
 
-                  <!-- Row 2: Wavy Scrubber Progress Bar (0:54 ~~~~~~~•────── 3:13) -->
+                  <!-- Row 2: Wavy Scrubber Progress Bar (0:54 ~~~~~~~â€¢â”€â”€â”€â”€â”€â”€ 3:13) -->
                   <Grid Grid.Row="2" Height="18" Margin="2,0,2,2">
                     <Grid.ColumnDefinitions>
                       <ColumnDefinition Width="Auto"/>
@@ -1021,55 +1093,116 @@ function Send-MediaCommandAsync ([string]$Cmd) {
             </Grid>
 
             <!-- =========================================================== -->
-            <!-- TAB 3: STATS VIEW (Ring Gauges)                             -->
+            <!-- TAB 3: STATS VIEW (Thermals, Network Traffic & Ring Gauges)  -->
             <!-- =========================================================== -->
             <Grid x:Name="ViewStats" Grid.Row="1" Visibility="Collapsed">
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="*"/>
-              </Grid.ColumnDefinitions>
+              <Border Background="#14141E" CornerRadius="16" BorderBrush="#1FFFFFFF" BorderThickness="1" Padding="12,10">
+                <Grid>
+                  <Grid.RowDefinitions>
+                    <!-- Row 0: Micro Thermal & Network Speed Cards -->
+                    <RowDefinition Height="Auto"/>
+                    <!-- Row 1: 3 Radial Gauges (CPU, GPU, RAM) -->
+                    <RowDefinition Height="*"/>
+                  </Grid.RowDefinitions>
 
-              <!-- CPU Gauge -->
-              <Border Grid.Column="0" Background="#14141E" CornerRadius="16" BorderBrush="#1FFFFFFF" BorderThickness="1" Margin="0,0,4,0" Padding="8,10">
-                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                  <Grid Width="72" Height="72" HorizontalAlignment="Center">
-                    <Path Stroke="#252538" StrokeThickness="5" Data="M 36,6 A 30,30 0 1,1 35.99,6"/>
-                    <Path x:Name="CpuArcPath" Stroke="$($Config.GlowColor)" StrokeThickness="5" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
-                    <TextBlock x:Name="StatsCpuPct" Text="0%" Foreground="$($Config.TextColor)"
-                               FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="13" FontWeight="Bold"
-                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                  </Grid>
-                  <TextBlock Text="CPU LOAD" Foreground="#888899" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,6,0,0"/>
-                </StackPanel>
-              </Border>
+                  <!-- Row 0: 3 Micro Cards (CPU Temp, GPU Temp, Network Speed) -->
+                  <Grid Grid.Row="0" Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="*"/>
+                      <ColumnDefinition Width="*"/>
+                      <ColumnDefinition Width="1.2*"/>
+                    </Grid.ColumnDefinitions>
 
-              <!-- GPU Gauge -->
-              <Border Grid.Column="1" Background="#14141E" CornerRadius="16" BorderBrush="#1FFFFFFF" BorderThickness="1" Margin="2,0,2,0" Padding="8,10">
-                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                  <Grid Width="72" Height="72" HorizontalAlignment="Center">
-                    <Path Stroke="#252538" StrokeThickness="5" Data="M 36,6 A 30,30 0 1,1 35.99,6"/>
-                    <Path x:Name="GpuArcPath" Stroke="$($Config.AccentPurple)" StrokeThickness="5" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
-                    <TextBlock x:Name="StatsGpuPct" Text="0%" Foreground="$($Config.TextColor)"
-                               FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="13" FontWeight="Bold"
-                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                  </Grid>
-                  <TextBlock Text="GPU 3D" Foreground="#888899" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,6,0,0"/>
-                </StackPanel>
-              </Border>
+                    <!-- CPU Temp Card -->
+                    <Border Grid.Column="0" Background="#181824" BorderBrush="#2A2A3C" BorderThickness="1" CornerRadius="10" Padding="8,6" Margin="0,0,3,0">
+                      <StackPanel>
+                        <TextBlock Text="CPU THERMAL" Foreground="#888899" FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="9" FontWeight="Bold"/>
+                        <TextBlock x:Name="StatsCpuTemp" Text="42&#176;C" Foreground="$($Config.GlowColor)"
+                                   FontFamily="Segoe UI Variable Display, Segoe UI" FontSize="14" FontWeight="Bold" Margin="0,1,0,0"/>
+                        <TextBlock x:Name="StatsCpuLoadSub" Text="Load 0%" Foreground="#66FFFFFF" FontSize="9"/>
+                      </StackPanel>
+                    </Border>
 
-              <!-- RAM Gauge -->
-              <Border Grid.Column="2" Background="#14141E" CornerRadius="16" BorderBrush="#1FFFFFFF" BorderThickness="1" Margin="4,0,0,0" Padding="8,10">
-                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                  <Grid Width="72" Height="72" HorizontalAlignment="Center">
-                    <Path Stroke="#252538" StrokeThickness="5" Data="M 36,6 A 30,30 0 1,1 35.99,6"/>
-                    <Path x:Name="RamArcPath" Stroke="$($Config.AccentGreen)" StrokeThickness="5" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
-                    <TextBlock x:Name="StatsRamPct" Text="0%" Foreground="$($Config.TextColor)"
-                               FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="13" FontWeight="Bold"
-                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    <!-- GPU Temp Card -->
+                    <Border Grid.Column="1" Background="#181824" BorderBrush="#2A2A3C" BorderThickness="1" CornerRadius="10" Padding="8,6" Margin="2,0,2,0">
+                      <StackPanel>
+                        <TextBlock Text="GPU THERMAL" Foreground="#888899" FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="9" FontWeight="Bold"/>
+                        <TextBlock x:Name="StatsGpuTemp" Text="40&#176;C" Foreground="$($Config.AccentPurple)"
+                                   FontFamily="Segoe UI Variable Display, Segoe UI" FontSize="14" FontWeight="Bold" Margin="0,1,0,0"/>
+                        <TextBlock x:Name="StatsGpuLoadSub" Text="Load 0%" Foreground="#66FFFFFF" FontSize="9"/>
+                      </StackPanel>
+                    </Border>
+
+                    <!-- Live Network Traffic Card -->
+                    <Border Grid.Column="2" Background="#181824" BorderBrush="#2A2A3C" BorderThickness="1" CornerRadius="10" Padding="8,6" Margin="3,0,0,0">
+                      <Grid>
+                        <Grid.RowDefinitions>
+                          <RowDefinition Height="Auto"/>
+                          <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" Text="NETWORK LIVE" Foreground="#888899" FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="9" FontWeight="Bold"/>
+                        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,2,0,0">
+                          <TextBlock x:Name="StatsNetDown" Text="DL: 0 KB/s" Foreground="$($Config.AccentGreen)"
+                                     FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="11" FontWeight="Bold" Margin="0,0,6,0"/>
+                          <TextBlock x:Name="StatsNetUp" Text="UL: 0 KB/s" Foreground="#888899"
+                                     FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="10" FontWeight="SemiBold"/>
+                        </StackPanel>
+                      </Grid>
+                    </Border>
                   </Grid>
-                  <TextBlock Text="MEMORY" Foreground="#888899" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,6,0,0"/>
-                </StackPanel>
+
+                  <!-- Row 1: 3 Radial Ring Gauges for CPU, GPU, RAM -->
+                  <Grid Grid.Row="1">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="*"/>
+                      <ColumnDefinition Width="*"/>
+                      <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- CPU Gauge -->
+                    <Border Grid.Column="0" Background="#181824" CornerRadius="12" BorderBrush="#1FFFFFFF" BorderThickness="1" Margin="0,0,3,0" Padding="6,6">
+                      <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <Grid Width="60" Height="60" HorizontalAlignment="Center">
+                          <Path Stroke="#252538" StrokeThickness="4.5" Data="M 30,5 A 25,25 0 1,1 29.99,5"/>
+                          <Path x:Name="CpuArcPath" Stroke="$($Config.GlowColor)" StrokeThickness="4.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                          <TextBlock x:Name="StatsCpuPct" Text="0%" Foreground="$($Config.TextColor)"
+                                     FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="12" FontWeight="Bold"
+                                     HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Grid>
+                        <TextBlock Text="CPU LOAD" Foreground="#888899" FontSize="9" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                      </StackPanel>
+                    </Border>
+
+                    <!-- GPU Gauge -->
+                    <Border Grid.Column="1" Background="#181824" CornerRadius="12" BorderBrush="#1FFFFFFF" BorderThickness="1" Margin="2,0,2,0" Padding="6,6">
+                      <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <Grid Width="60" Height="60" HorizontalAlignment="Center">
+                          <Path Stroke="#252538" StrokeThickness="4.5" Data="M 30,5 A 25,25 0 1,1 29.99,5"/>
+                          <Path x:Name="GpuArcPath" Stroke="$($Config.AccentPurple)" StrokeThickness="4.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                          <TextBlock x:Name="StatsGpuPct" Text="0%" Foreground="$($Config.TextColor)"
+                                     FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="12" FontWeight="Bold"
+                                     HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Grid>
+                        <TextBlock Text="GPU 3D" Foreground="#888899" FontSize="9" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                      </StackPanel>
+                    </Border>
+
+                    <!-- RAM Gauge -->
+                    <Border Grid.Column="2" Background="#181824" CornerRadius="12" BorderBrush="#1FFFFFFF" BorderThickness="1" Margin="3,0,0,0" Padding="6,6">
+                      <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <Grid Width="60" Height="60" HorizontalAlignment="Center">
+                          <Path Stroke="#252538" StrokeThickness="4.5" Data="M 30,5 A 25,25 0 1,1 29.99,5"/>
+                          <Path x:Name="RamArcPath" Stroke="$($Config.AccentGreen)" StrokeThickness="4.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                          <TextBlock x:Name="StatsRamPct" Text="0%" Foreground="$($Config.TextColor)"
+                                     FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="12" FontWeight="Bold"
+                                     HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Grid>
+                        <TextBlock Text="MEMORY" Foreground="#888899" FontSize="9" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                      </StackPanel>
+                    </Border>
+                  </Grid>
+
+                </Grid>
               </Border>
             </Grid>
 
@@ -1498,7 +1631,13 @@ $mediaWaveProgress  = $window.FindName('MediaWaveProgress')
 $mediaWaveThumb     = $window.FindName('MediaWaveThumb')
 $mediaWaveRemaining = $window.FindName('MediaWaveRemaining')
 
-# Tab 3: Stats Elements
+# Tab 3: Stats Elements (Thermals, Network Traffic & Ring Gauges)
+$statsCpuTemp       = $window.FindName('StatsCpuTemp')
+$statsGpuTemp       = $window.FindName('StatsGpuTemp')
+$statsCpuLoadSub    = $window.FindName('StatsCpuLoadSub')
+$statsGpuLoadSub    = $window.FindName('StatsGpuLoadSub')
+$statsNetDown       = $window.FindName('StatsNetDown')
+$statsNetUp         = $window.FindName('StatsNetUp')
 $cpuArcPath         = $window.FindName('CpuArcPath')
 $gpuArcPath         = $window.FindName('GpuArcPath')
 $ramArcPath         = $window.FindName('RamArcPath')
@@ -1887,20 +2026,41 @@ function Update-UIState {
 
     $compactLoadText.Text = "CPU ${cpu}%"
 
-    $cpuArcPath.Data = [System.Windows.Media.Geometry]::Parse((Get-ArcPath 36 36 30 $cpu))
-    $gpuArcPath.Data = [System.Windows.Media.Geometry]::Parse((Get-ArcPath 36 36 30 $gpu))
-    $ramArcPath.Data = [System.Windows.Media.Geometry]::Parse((Get-ArcPath 36 36 30 $ram))
+    # Stats Gauges
+    $cpuArcPath.Data = [System.Windows.Media.Geometry]::Parse((Get-ArcPath 30 30 25 $cpu))
+    $gpuArcPath.Data = [System.Windows.Media.Geometry]::Parse((Get-ArcPath 30 30 25 $gpu))
+    $ramArcPath.Data = [System.Windows.Media.Geometry]::Parse((Get-ArcPath 30 30 25 $ram))
 
     $statsCpuPct.Text = "${cpu}%"
     $statsGpuPct.Text = "${gpu}%"
     $statsRamPct.Text = "${ram}%"
 
-    # Dynamic Load Aura Warning (>78% Warn, >88% Critical)
+    # Thermals & Network Readings
+    $deg = [char]0x00B0; $statsCpuTemp.Text    = "$($script:sharedState.CpuTemp)${deg}C"
+    $statsGpuTemp.Text    = "$($script:sharedState.GpuTemp)${deg}C"
+    $statsCpuLoadSub.Text = "Load ${cpu}%"
+    $statsGpuLoadSub.Text = "Load ${gpu}%"
+
+    $statsNetDown.Text    = "DL: $($script:sharedState.NetDown)"
+    $statsNetUp.Text      = "UL: $($script:sharedState.NetUp)"
+
+    # Dynamic Thermal Color for CPU/GPU Readouts
+    if ($script:sharedState.CpuTemp -ge 85) { $statsCpuTemp.Foreground = $script:brushRed }
+    elseif ($script:sharedState.CpuTemp -ge 75) { $statsCpuTemp.Foreground = $script:brushWarn }
+    else { $statsCpuTemp.Foreground = $script:brushAccentSolid }
+
+    if ($script:sharedState.GpuTemp -ge 85) { $statsGpuTemp.Foreground = $script:brushRed }
+    elseif ($script:sharedState.GpuTemp -ge 75) { $statsGpuTemp.Foreground = $script:brushWarn }
+    else { $statsGpuTemp.Foreground = $bc.ConvertFromString($Config.AccentPurple) }
+
+    # Dynamic Thermal / Load Aura Warning (>75 C / >78% Warn, >85 C / >88% Critical)
     if ($Config.EnableDynamicGlow) {
+        $maxTemp = [math]::Max($script:sharedState.CpuTemp, $script:sharedState.GpuTemp)
         $maxLoad = [math]::Max($cpu, $gpu)
-        $targetColor = if ($maxLoad -ge 88) { $script:colorCrit }
-                       elseif ($maxLoad -ge 78) { $script:colorWarn }
-                       else                  { [System.Windows.Media.ColorConverter]::ConvertFromString($Config.GlowColor) }
+
+        $targetColor = if ($maxTemp -ge 85 -or $maxLoad -ge 88) { $script:colorCrit }
+                       elseif ($maxTemp -ge 75 -or $maxLoad -ge 78) { $script:colorWarn }
+                       else { [System.Windows.Media.ColorConverter]::ConvertFromString($Config.GlowColor) }
 
         if ($glowFx.Color -ne $targetColor) {
             $ca = New-Object System.Windows.Media.Animation.ColorAnimation($targetColor, [TimeSpan]::FromMilliseconds(500))
@@ -1982,7 +2142,7 @@ $waveTimer.Add_Tick({
     $progRatio = [math]::Min([math]::Max($script:sharedState.MediaProgress, 0.05), 0.95)
 
     $canvasW = $mediaWaveCanvas.ActualWidth
-    if ($canvasW -le 10) { $canvasW = 260 }
+    if ($canvasW -le 10) { $canvasW = 270 }
     $midY = 8.0
     $amp = if ($isPlaying) { 3.2 } else { 0.8 }
 

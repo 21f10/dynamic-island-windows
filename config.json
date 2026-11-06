@@ -1,6 +1,6 @@
 ﻿{
-    "ExpandedHeight":  250,
-    "ExpandedWidth":  480,
+    "ExpandedHeight":  265,
+    "ExpandedWidth":  500,
     "Tabs":  {
                  "Stats":  true,
                  "Today":  true,
@@ -10,7 +10,7 @@
              },
     "GlowOpacity":  0.9,
     "IslandWidth":  255,
-    "WindowWidth":  540,
+    "WindowWidth":  550,
     "CritColor":  "#FFFF1744",
     "CollapseDelay":  320,
     "AccentPurple":  "#FFA855F7",
@@ -37,7 +37,7 @@
     "CardBorderColor":  "#25FFFFFF",
     "CornerRadius":  22,
     "EnableDynamicGlow":  true,
-    "X":  593.33333333333326,
+    "X":  578.66666666666663,
     "AccentGreen":  "#FF00E676",
     "EnableSMTC":  true,
     "TextColor":  "#FFFFFFFF"
