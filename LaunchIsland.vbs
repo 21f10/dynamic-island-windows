@@ -1,7 +1,7 @@
 ' ============================================================================
-' LaunchIsland.vbs — Silent launcher for Dynamic Island
+' LaunchIsland.vbs -- Silent launcher for Dynamic Island
 ' ============================================================================
-' Purpose:  Launches Island.ps1 completely hidden — no console window flash,
+' Purpose:  Launches Island.ps1 completely hidden -- no console window flash,
 '           no taskbar blip. Ideal for use in Startup shortcuts or scheduled
 '           tasks where a silent launch is required.
 '
@@ -30,9 +30,9 @@ End If
 
 ' --- Launch PowerShell hidden ---------------------------------------------------
 ' Parameters for WScript.Shell.Run:
-'   command  — powershell with all necessary flags
-'   0        — window style: SW_HIDE (completely hidden)
-'   False    — don't wait for the process to finish
+'   command  -- powershell with all necessary flags
+'   0        -- window style: SW_HIDE (completely hidden)
+'   False    -- don't wait for the process to finish
 Dim objShell
 Set objShell = CreateObject("WScript.Shell")
 objShell.Run "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File """ & strIslandPs1 & """", 0, False

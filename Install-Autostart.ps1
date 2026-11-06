@@ -51,7 +51,7 @@ $StartupFolder   = [System.Environment]::GetFolderPath('Startup')
 $ShortcutPath    = Join-Path -Path $StartupFolder -ChildPath $ShortcutName
 
 # ---------------------------------------------------------------------------
-# Uninstall mode — remove the shortcut and exit
+# Uninstall mode -- remove the shortcut and exit
 # ---------------------------------------------------------------------------
 if ($Uninstall) {
     if (Test-Path -LiteralPath $ShortcutPath) {
@@ -65,7 +65,7 @@ if ($Uninstall) {
 }
 
 # ---------------------------------------------------------------------------
-# Install mode — create the shortcut
+# Install mode -- create the shortcut
 # ---------------------------------------------------------------------------
 
 # Validate that LaunchIsland.vbs exists before creating a shortcut to it
@@ -89,7 +89,7 @@ try {
 
     Write-Host ""
     Write-Host "=============================================" -ForegroundColor Cyan
-    Write-Host " Dynamic Island — Autostart Installed" -ForegroundColor Cyan
+    Write-Host " Dynamic Island - Autostart Installed" -ForegroundColor Cyan
     Write-Host "=============================================" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "  Shortcut : $ShortcutPath" -ForegroundColor White
