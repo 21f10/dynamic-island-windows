@@ -23,15 +23,14 @@
     "SubtextColor":  "#9B9BA7",
     "CardColor":  "#16161D",
     "GlowColor":  "#F87171",
-    "WindowHeight":  580,
+    "WindowHeight":  360,
     "EnableVolumeScroll":  true,
     "ExpandMs":  220,
     "ScreenTopMargin":  8,
     "IslandHeight":  38,
-    "WebDrawerUrl":  "https://zdvascasc",
     "MediaPopupMs":  4000,
     "CornerRadius":  24,
     "Surface":  "#0E0E13",
-    "X":  568.33333333333337,
+    "X":  568.66666666666663,
     "ColorAmber":  "#FBBF24"
 }
