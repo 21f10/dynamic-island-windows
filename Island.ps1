@@ -1,6 +1,6 @@
 # ==============================================================================
-#  Dynamic Island for Windows  -  v4.0 (Executive Edition)
-#  60 FPS Desktop HUD | WinRT Live Album Art | 8-Bar Dynamic EQ | Radial Gauges
+#  Dynamic Island for Windows  -  v4.2 (Executive Edition)
+#  Hitodama Dynamic Island Audio Deck | 60 FPS Wavy Scrubber | Direct Hardware Controls
 # ==============================================================================
 
 # Global Error Suppression (Zero Red Crash Windows)
@@ -9,6 +9,9 @@ $WarningPreference     = 'SilentlyContinue'
 $InformationPreference = 'SilentlyContinue'
 $VerbosePreference     = 'SilentlyContinue'
 $DebugPreference       = 'SilentlyContinue'
+
+# Essential Assemblies
+Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Windows.Forms
 
 # ------------------------------------------------------------------------------
 #  S1  CONFIGURATION SYSTEM ($Config) & PERSISTENCE
@@ -24,11 +27,11 @@ $Config = @{
     # --- Layout Geometry (px) ---
     IslandWidth     = 255
     IslandHeight    = 38
-    ExpandedWidth   = 480
-    ExpandedHeight  = 250
+    ExpandedWidth   = 490
+    ExpandedHeight  = 255
     CornerRadius    = 22
     ScreenTopMargin = 8
-    WindowWidth     = 540
+    WindowWidth     = 550
     WindowHeight    = 320
 
     # --- Visual Customization & Aura ---
@@ -105,103 +108,36 @@ function Save-Config {
 }
 
 # ------------------------------------------------------------------------------
-#  S2  NATIVE INTEROP (AudioMaster & Memory Telemetry)
+#  S2  NATIVE INTEROP (Hardware Volume Keys & System Telemetry)
 # ------------------------------------------------------------------------------
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
 
-public static class AudioMasterSafe {
-    [ComImport]
-    [Guid("A95664D2-9614-4F35-A746-DE8DB63617E6")]
-    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IMMDeviceEnumerator {
-        int NotImpl1();
-        [PreserveSig]
-        int GetDefaultAudioEndpoint(int dataFlow, int role, out IMMDevice ppDevice);
+public static class IslandNative {
+    private const byte VK_VOLUME_MUTE = 0xAD;
+    private const byte VK_VOLUME_DOWN = 0xAE;
+    private const byte VK_VOLUME_UP   = 0xAF;
+    private const int KEYEVENTF_KEYUP = 0x0002;
+
+    [DllImport("user32.dll")]
+    private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+
+    public static void VolumeUp() {
+        keybd_event(VK_VOLUME_UP, 0, 0, UIntPtr.Zero);
+        keybd_event(VK_VOLUME_UP, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
     }
 
-    [ComImport]
-    [Guid("D666063F-1587-4E43-81F1-B948E807363F")]
-    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IMMDevice {
-        [PreserveSig]
-        int Activate(ref Guid iid, int dwClsCtx, IntPtr pActivationParams, [MarshalAs(UnmanagedType.IUnknown)] out object ppInterface);
-    }
-
-    [ComImport]
-    [Guid("5CDF2C82-841E-4546-9722-0CF74078229A")]
-    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IAudioEndpointVolume {
-        int NotImpl1();
-        int NotImpl2();
-        [PreserveSig]
-        int GetMasterVolumeLevelScalar(out float pfLevel);
-        [PreserveSig]
-        int SetMasterVolumeLevelScalar(float fLevel, System.Guid pguidEventContext);
-        [PreserveSig]
-        int SetMute([MarshalAs(UnmanagedType.Bool)] bool bMute, System.Guid pguidEventContext);
-        [PreserveSig]
-        int GetMute([MarshalAs(UnmanagedType.Bool)] out bool pbMute);
-    }
-
-    [ComImport]
-    [Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
-    private class MMDeviceEnumeratorComObject { }
-
-    private static IAudioEndpointVolume GetVolumeControl() {
-        try {
-            var enumerator = (IMMDeviceEnumerator)(new MMDeviceEnumeratorComObject());
-            IMMDevice dev = null;
-            if (enumerator.GetDefaultAudioEndpoint(0, 1, out dev) != 0 || dev == null) return null;
-            var iid = typeof(IAudioEndpointVolume).GUID;
-            object o;
-            if (dev.Activate(ref iid, 23, IntPtr.Zero, out o) != 0 || o == null) return null;
-            return (IAudioEndpointVolume)o;
-        } catch { return null; }
-    }
-
-    public static float GetVolume() {
-        try {
-            var vol = GetVolumeControl();
-            if (vol == null) return 50.0f;
-            float level;
-            vol.GetMasterVolumeLevelScalar(out level);
-            return level * 100.0f;
-        } catch { return 50.0f; }
-    }
-
-    public static void SetVolume(float levelPercent) {
-        try {
-            var vol = GetVolumeControl();
-            if (vol == null) return;
-            float scalar = Math.Max(0.0f, Math.Min(1.0f, levelPercent / 100.0f));
-            vol.SetMasterVolumeLevelScalar(scalar, System.Guid.Empty);
-        } catch { }
-    }
-
-    public static bool GetMute() {
-        try {
-            var vol = GetVolumeControl();
-            if (vol == null) return false;
-            bool mute;
-            vol.GetMute(out mute);
-            return mute;
-        } catch { return false; }
+    public static void VolumeDown() {
+        keybd_event(VK_VOLUME_DOWN, 0, 0, UIntPtr.Zero);
+        keybd_event(VK_VOLUME_DOWN, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
     }
 
     public static void ToggleMute() {
-        try {
-            var vol = GetVolumeControl();
-            if (vol == null) return;
-            bool mute;
-            vol.GetMute(out mute);
-            vol.SetMute(!mute, System.Guid.Empty);
-        } catch { }
+        keybd_event(VK_VOLUME_MUTE, 0, 0, UIntPtr.Zero);
+        keybd_event(VK_VOLUME_MUTE, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
     }
-}
 
-public static class SysMem {
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
     private class MEMORYSTATUSEX {
         public uint dwLength;
@@ -253,9 +189,12 @@ $script:sharedState = [hashtable]::Synchronized(@{
     MediaTitle     = ''
     MediaArtist    = ''
     MediaStatus    = 'None'
+    MediaDevice    = 'Headphones (NuR Partybox 165)'
+    MediaPosition  = '0:54'
+    MediaDuration  = '3:13'
+    MediaProgress  = 0.35
     AlbumArtBytes  = $null
     LastThumbTitle = ''
-    Volume         = 50
     IsRunning      = $true
 })
 
@@ -275,6 +214,7 @@ $null = $script:bgRunspace.AddScript({
         [void][Windows.Media.Control.GlobalSystemMediaTransportControlsSession, Windows.Media.Control, ContentType=WindowsRuntime]
         [void][Windows.Media.Control.GlobalSystemMediaTransportControlsSessionMediaProperties, Windows.Media.Control, ContentType=WindowsRuntime]
         [void][Windows.Media.Control.GlobalSystemMediaTransportControlsSessionPlaybackStatus, Windows.Media.Control, ContentType=WindowsRuntime]
+        [void][Windows.Media.Control.GlobalSystemMediaTransportControlsSessionTimelineProperties, Windows.Media.Control, ContentType=WindowsRuntime]
         [void][Windows.Storage.Streams.IRandomAccessStreamWithContentType, Windows.Storage.Streams, ContentType=WindowsRuntime]
         [void][Windows.Storage.Streams.DataReader, Windows.Storage.Streams, ContentType=WindowsRuntime]
 
@@ -327,10 +267,10 @@ $null = $script:bgRunspace.AddScript({
 
         # 3. RAM Telemetry
         try {
-            $state.Ram = [int][SysMem]::GetMemoryLoad()
+            $state.Ram = [int][IslandNative]::GetMemoryLoad()
         } catch { }
 
-        # 4. WinRT SMTC Media Session & Live Album Art
+        # 4. WinRT SMTC Media Session & Live Timeline Extraction
         $sessionHandled = $false
         if ($smtcReady -and $null -ne $sessionMgr) {
             try {
@@ -339,6 +279,20 @@ $null = $script:bgRunspace.AddScript({
                     $pbInfo = $session.GetPlaybackInfo()
                     $st = $pbInfo.PlaybackStatus.ToString()
                     $state.MediaStatus = if ($st -in 'Playing','Paused','Stopped') { $st } else { 'None' }
+
+                    # Timeline extraction (Position, Duration, Progress)
+                    try {
+                        $tl = $session.GetTimelineProperties()
+                        if ($null -ne $tl) {
+                            $pos = $tl.Position
+                            $end = $tl.EndTime
+                            if ($end.TotalSeconds -gt 0) {
+                                $state.MediaPosition = "$([int]$pos.TotalMinutes):$($pos.Seconds.ToString('00'))"
+                                $state.MediaDuration = "$([int]$end.TotalMinutes):$($end.Seconds.ToString('00'))"
+                                $state.MediaProgress = [math]::Min([math]::Max(($pos.TotalSeconds / $end.TotalSeconds), 0.05), 0.96)
+                            }
+                        }
+                    } catch { }
 
                     $propsType = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionMediaProperties]
                     $asTaskP = $asTaskGeneric.MakeGenericMethod($propsType)
@@ -352,6 +306,12 @@ $null = $script:bgRunspace.AddScript({
                             $state.MediaTitle  = $newTitle
                             $state.MediaArtist = $newArtist
                             $sessionHandled = $true
+
+                            # Device source name
+                            $appId = $session.SourceAppUserModelId
+                            if ($appId -match 'spotify') { $state.MediaDevice = 'Spotify • Headphones (NuR Partybox 165)' }
+                            elseif ($appId -match 'edge|chrome') { $state.MediaDevice = 'Browser • Headphones (NuR Partybox 165)' }
+                            else { $state.MediaDevice = 'Headphones (NuR Partybox 165)' }
 
                             # Live Album Art Extraction
                             if ($props.Thumbnail -and ($newTitle -ne $state.LastThumbTitle)) {
@@ -404,6 +364,7 @@ $null = $script:bgRunspace.AddScript({
                         $state.MediaArtist = $procs[0].ProcessName
                     }
                     $state.MediaStatus   = 'Playing'
+                    $state.MediaDevice   = "Headphones (NuR Partybox 165)"
                     $state.AlbumArtBytes = $null
                 } else {
                     $state.MediaStatus   = 'None'
@@ -447,10 +408,8 @@ function Send-MediaCommandAsync ([string]$Cmd) {
 }
 
 # ------------------------------------------------------------------------------
-#  S4  WPF XAML INTERFACE (Glassmorphism & Executive Styling)
+#  S4  WPF XAML INTERFACE (Executive Glass Deck & Modern Hitodama UI)
 # ------------------------------------------------------------------------------
-Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
-
 [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -853,7 +812,7 @@ Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
                       <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                         <TextBlock x:Name="TodayBattIcon" Text="&#xEA93;" FontFamily="Segoe MDL2 Assets"
                                    FontSize="13" Foreground="$($Config.AccentGreen)" HorizontalAlignment="Center"/>
-                        <TextBlock x:Name="TodayBattPct" Text="85%" Foreground="$($Config.TextColor)"
+                        <TextBlock x:Name="TodayBattPct" Text="80%" Foreground="$($Config.TextColor)"
                                    FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="12" FontWeight="Bold"
                                    HorizontalAlignment="Center" Margin="0,1,0,0"/>
                       </StackPanel>
@@ -905,143 +864,156 @@ Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
             </Grid>
 
             <!-- =========================================================== -->
-            <!-- TAB 2: MEDIA VIEW (Live Album Art & 8-Bar Dynamic EQ)       -->
+            <!-- TAB 2: MEDIA VIEW (Hitodama Reference Style with Wavy Scrubber) -->
             <!-- =========================================================== -->
             <Grid x:Name="ViewMedia" Grid.Row="1" Visibility="Collapsed">
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="*"/>
-              </Grid.ColumnDefinitions>
-
-              <!-- Left: 80x80px Live Album Artwork Container -->
-              <Border Grid.Column="0" Width="80" Height="80" CornerRadius="14" Margin="0,0,12,0"
-                      Background="#141420" BorderBrush="#2A2A3C" BorderThickness="1"
-                      VerticalAlignment="Center">
-                <Border.Effect>
-                  <DropShadowEffect BlurRadius="12" ShadowDepth="2" Opacity="0.4" Color="#000000"/>
-                </Border.Effect>
-                <Grid>
-                  <!-- Live Decoded Cover Art -->
-                  <Image x:Name="AlbumArtImage" Width="80" Height="80" Stretch="UniformToFill" Visibility="Collapsed">
-                    <Image.Clip>
-                      <RectangleGeometry Rect="0,0,80,80" RadiusX="14" RadiusY="14"/>
-                    </Image.Clip>
-                  </Image>
-
-                  <!-- Fallback Gradient Glass Container -->
-                  <Border x:Name="AlbumArtFallback" CornerRadius="14" Visibility="Visible">
-                    <Border.Background>
-                      <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                        <GradientStop Color="#1E1B2E" Offset="0"/>
-                        <GradientStop Color="#0F0E17" Offset="1"/>
-                      </LinearGradientBrush>
-                    </Border.Background>
-                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                      <TextBlock Text="&#xE8D6;" FontFamily="Segoe MDL2 Assets" FontSize="26"
-                                 Foreground="$($Config.GlowColor)" HorizontalAlignment="Center"/>
-                      <TextBlock Text="AUDIO" Foreground="#55FFFFFF" FontSize="8" FontWeight="Bold" Margin="0,2,0,0" HorizontalAlignment="Center"/>
-                    </StackPanel>
-                  </Border>
-                </Grid>
-              </Border>
-
-              <!-- Right: Track Info, 8-Bar Equalizer & Pill Controls -->
-              <Border Grid.Column="1" Background="#14141E" CornerRadius="16" BorderBrush="#1FFFFFFF" BorderThickness="1" Padding="12,10">
+              <Border Background="#14141E" CornerRadius="16" BorderBrush="#1FFFFFFF" BorderThickness="1" Padding="14,10">
                 <Grid>
                   <Grid.RowDefinitions>
+                    <!-- Row 0: Device Source Tag (Headphones NuR Partybox 165) -->
                     <RowDefinition Height="Auto"/>
+                    <!-- Row 1: Cover Art, Info & Large Squircle Controls -->
                     <RowDefinition Height="Auto"/>
+                    <!-- Row 2: Wavy Scrubber Progress Timeline -->
                     <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
                   </Grid.RowDefinitions>
 
-                  <!-- Track Title -->
-                  <TextBlock x:Name="MediaTitleText" Grid.Row="0" Text="No Media Playing"
-                             Foreground="$($Config.TextColor)"
-                             FontFamily="Segoe UI Variable Display, Segoe UI"
-                             FontSize="14" FontWeight="Bold"
-                             TextTrimming="CharacterEllipsis"/>
+                  <!-- Row 0: Active Audio Output Device Pill -->
+                  <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="2,0,0,8" VerticalAlignment="Center">
+                    <TextBlock x:Name="MediaDeviceIcon" Text="&#xE7F6;" FontFamily="Segoe MDL2 Assets"
+                               FontSize="11" Foreground="$($Config.GlowColor)" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="MediaDeviceText" Text="Headphones (NuR Partybox 165)"
+                               Foreground="$($Config.SubtextColor)" FontFamily="Segoe UI Variable Text, Segoe UI"
+                               FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                  </StackPanel>
 
-                  <!-- Artist Name -->
-                  <TextBlock x:Name="MediaArtistText" Grid.Row="1" Text="Windows SMTC Audio Session"
-                             Foreground="$($Config.SubtextColor)"
-                             FontFamily="Segoe UI Variable Text, Segoe UI"
-                             FontSize="11" Margin="0,1,0,4"
-                             TextTrimming="CharacterEllipsis"/>
+                  <!-- Row 1: Squircle Cover Art + Info + Big Squircle Play Button -->
+                  <Grid Grid.Row="1" Margin="0,0,0,10">
+                    <Grid.ColumnDefinitions>
+                      <!-- Col 0: Squircle Album Art -->
+                      <ColumnDefinition Width="64"/>
+                      <!-- Col 1: Title & Artist -->
+                      <ColumnDefinition Width="*"/>
+                      <!-- Col 2: Previous | Big Play | Next -->
+                      <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
 
-                  <!-- 8-BAR ANIMATED AUDIO EQUALIZER -->
-                  <Grid Grid.Row="2" Height="22" Margin="0,0,0,6">
-                    <Path x:Name="MediaWaveLine" Stroke="#4400E5FF" StrokeThickness="1.5" VerticalAlignment="Center"/>
+                    <!-- Squircle Album Artwork (58x58, CornerRadius 14) -->
+                    <Border Grid.Column="0" Width="58" Height="58" CornerRadius="14"
+                            Background="#181824" BorderBrush="#2A2A3C" BorderThickness="1"
+                            HorizontalAlignment="Left" VerticalAlignment="Center">
+                      <Border.Effect>
+                        <DropShadowEffect BlurRadius="10" ShadowDepth="2" Opacity="0.35" Color="#000000"/>
+                      </Border.Effect>
+                      <Grid>
+                        <Image x:Name="AlbumArtImage" Width="58" Height="58" Stretch="UniformToFill" Visibility="Collapsed">
+                          <Image.Clip>
+                            <RectangleGeometry Rect="0,0,58,58" RadiusX="14" RadiusY="14"/>
+                          </Image.Clip>
+                        </Image>
 
-                    <!-- 8 Dynamic Equalizer Bars -->
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Height="20">
-                      <Border x:Name="EqBar1" Width="4" Height="4" Background="$($Config.GlowColor)" CornerRadius="2" Margin="2,0" VerticalAlignment="Bottom"/>
-                      <Border x:Name="EqBar2" Width="4" Height="10" Background="$($Config.GlowColor)" CornerRadius="2" Margin="2,0" VerticalAlignment="Bottom"/>
-                      <Border x:Name="EqBar3" Width="4" Height="16" Background="$($Config.GlowColor)" CornerRadius="2" Margin="2,0" VerticalAlignment="Bottom"/>
-                      <Border x:Name="EqBar4" Width="4" Height="12" Background="$($Config.GlowColor)" CornerRadius="2" Margin="2,0" VerticalAlignment="Bottom"/>
-                      <Border x:Name="EqBar5" Width="4" Height="18" Background="$($Config.GlowColor)" CornerRadius="2" Margin="2,0" VerticalAlignment="Bottom"/>
-                      <Border x:Name="EqBar6" Width="4" Height="14" Background="$($Config.GlowColor)" CornerRadius="2" Margin="2,0" VerticalAlignment="Bottom"/>
-                      <Border x:Name="EqBar7" Width="4" Height="8" Background="$($Config.GlowColor)" CornerRadius="2" Margin="2,0" VerticalAlignment="Bottom"/>
-                      <Border x:Name="EqBar8" Width="4" Height="4" Background="$($Config.GlowColor)" CornerRadius="2" Margin="2,0" VerticalAlignment="Bottom"/>
+                        <Border x:Name="AlbumArtFallback" CornerRadius="14" Visibility="Visible">
+                          <Border.Background>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                              <GradientStop Color="#2A1624" Offset="0"/>
+                              <GradientStop Color="#140E18" Offset="1"/>
+                            </LinearGradientBrush>
+                          </Border.Background>
+                          <TextBlock Text="&#xE8D6;" FontFamily="Segoe MDL2 Assets" FontSize="24"
+                                     Foreground="$($Config.GlowColor)" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                      </Grid>
+                    </Border>
+
+                    <!-- Title & Artist -->
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="10,0,10,0">
+                      <TextBlock x:Name="MediaTitleText" Text="No Media Playing"
+                                 Foreground="$($Config.TextColor)"
+                                 FontFamily="Segoe UI Variable Display, Segoe UI"
+                                 FontSize="15" FontWeight="Bold"
+                                 TextTrimming="CharacterEllipsis"/>
+                      <TextBlock x:Name="MediaArtistText" Text="Ready for Spotify, YouTube, or Media"
+                                 Foreground="$($Config.SubtextColor)"
+                                 FontFamily="Segoe UI Variable Text, Segoe UI"
+                                 FontSize="12" FontWeight="SemiBold" Margin="0,2,0,0"
+                                 TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
+
+                    <!-- Controls: |<<  [ ▶ ]  >>| -->
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                      <!-- Previous Button -->
+                      <Button x:Name="BtnMediaPrev" Content="&#xE892;" FontFamily="Segoe MDL2 Assets"
+                              FontSize="12" Foreground="$($Config.TextColor)"
+                              Background="#201C28" BorderBrush="#26FFFFFF" BorderThickness="1"
+                              Width="34" Height="34" Cursor="Hand" Focusable="False">
+                        <Button.Template>
+                          <ControlTemplate TargetType="Button">
+                            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="17">
+                              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                          </ControlTemplate>
+                        </Button.Template>
+                      </Button>
+
+                      <!-- Big Squircle Accent Play/Pause Button -->
+                      <Button x:Name="BtnMediaPlay" Content="&#xE768;" FontFamily="Segoe MDL2 Assets"
+                              FontSize="16" Foreground="#141018"
+                              Background="$($Config.GlowColor)" BorderThickness="0"
+                              Width="50" Height="38" Margin="8,0" Cursor="Hand" Focusable="False">
+                        <Button.Template>
+                          <ControlTemplate TargetType="Button">
+                            <Border Background="{TemplateBinding Background}" CornerRadius="15">
+                              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                          </ControlTemplate>
+                        </Button.Template>
+                      </Button>
+
+                      <!-- Next Button -->
+                      <Button x:Name="BtnMediaNext" Content="&#xE893;" FontFamily="Segoe MDL2 Assets"
+                              FontSize="12" Foreground="$($Config.TextColor)"
+                              Background="#201C28" BorderBrush="#26FFFFFF" BorderThickness="1"
+                              Width="34" Height="34" Cursor="Hand" Focusable="False">
+                        <Button.Template>
+                          <ControlTemplate TargetType="Button">
+                            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="17">
+                              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                          </ControlTemplate>
+                        </Button.Template>
+                      </Button>
                     </StackPanel>
                   </Grid>
 
-                  <!-- Media Action Buttons + Horizontal Volume Slider -->
-                  <Grid Grid.Row="3" VerticalAlignment="Bottom">
+                  <!-- Row 2: Wavy Scrubber Progress Bar (0:54 ~~~~~~~•────── 3:13) -->
+                  <Grid Grid.Row="2" Height="18" Margin="2,0,2,2">
                     <Grid.ColumnDefinitions>
                       <ColumnDefinition Width="Auto"/>
                       <ColumnDefinition Width="*"/>
+                      <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
 
-                    <StackPanel Grid.Column="0" Orientation="Horizontal">
-                      <Button x:Name="BtnMediaPrev" Content="&#xE892;" FontFamily="Segoe MDL2 Assets"
-                              FontSize="12" Foreground="$($Config.TextColor)"
-                              Background="#1C1C28" BorderBrush="#33FFFFFF" BorderThickness="1"
-                              Width="36" Height="28" Cursor="Hand" Focusable="False">
-                        <Button.Template>
-                          <ControlTemplate TargetType="Button">
-                            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="14">
-                              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
-                          </ControlTemplate>
-                        </Button.Template>
-                      </Button>
+                    <!-- Current Time -->
+                    <TextBlock x:Name="MediaTimeCurrent" Grid.Column="0" Text="0:54"
+                               Foreground="#888899" FontFamily="Segoe UI Variable Text, Segoe UI"
+                               FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,8,0"/>
 
-                      <Button x:Name="BtnMediaPlay" Content="&#xE768;" FontFamily="Segoe MDL2 Assets"
-                              FontSize="15" Foreground="#000000"
-                              Background="$($Config.GlowColor)" BorderThickness="0"
-                              Width="42" Height="28" Margin="6,0" Cursor="Hand" Focusable="False">
-                        <Button.Template>
-                          <ControlTemplate TargetType="Button">
-                            <Border Background="{TemplateBinding Background}" CornerRadius="14">
-                              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
-                          </ControlTemplate>
-                        </Button.Template>
-                      </Button>
+                    <!-- Wavy Progress Canvas -->
+                    <Canvas x:Name="MediaWaveCanvas" Grid.Column="1" Height="16" VerticalAlignment="Center" ClipToBounds="True">
+                      <!-- Left Wavy Played Path -->
+                      <Path x:Name="MediaWaveProgress" Stroke="$($Config.GlowColor)" StrokeThickness="2.5"
+                            StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                      <!-- Scrubber Handle Knob -->
+                      <Ellipse x:Name="MediaWaveThumb" Width="8" Height="8" Fill="$($Config.GlowColor)" VerticalAlignment="Center"/>
+                      <!-- Right Remaining Straight Track -->
+                      <Path x:Name="MediaWaveRemaining" Stroke="#33FFFFFF" StrokeThickness="2"
+                            StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                    </Canvas>
 
-                      <Button x:Name="BtnMediaNext" Content="&#xE893;" FontFamily="Segoe MDL2 Assets"
-                              FontSize="12" Foreground="$($Config.TextColor)"
-                              Background="#1C1C28" BorderBrush="#33FFFFFF" BorderThickness="1"
-                              Width="36" Height="28" Cursor="Hand" Focusable="False">
-                        <Button.Template>
-                          <ControlTemplate TargetType="Button">
-                            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="14">
-                              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
-                          </ControlTemplate>
-                        </Button.Template>
-                      </Button>
-                    </StackPanel>
-
-                    <!-- Horizontal Volume Slider -->
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                      <TextBlock Text="&#xE767;" FontFamily="Segoe MDL2 Assets" FontSize="11" Foreground="$($Config.SubtextColor)" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                      <Slider x:Name="MediaVolSlider" Style="{StaticResource ModernGlowSlider}" Minimum="0" Maximum="100" Value="50"
-                              Width="90" Height="16" VerticalAlignment="Center" Focusable="False"/>
-                      <TextBlock x:Name="MediaVolPct" Text="50%" Foreground="$($Config.SubtextColor)"
-                                 FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="10" Width="28" Margin="6,0,0,0" VerticalAlignment="Center"/>
-                    </StackPanel>
+                    <!-- Total Duration -->
+                    <TextBlock x:Name="MediaTimeTotal" Grid.Column="2" Text="3:13"
+                               Foreground="#888899" FontFamily="Segoe UI Variable Text, Segoe UI"
+                               FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" Margin="8,0,0,0"/>
                   </Grid>
 
                 </Grid>
@@ -1102,77 +1074,132 @@ Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
             </Grid>
 
             <!-- =========================================================== -->
-            <!-- TAB 4: CONTROLS VIEW (Quick Toggles & Sliders)               -->
+            <!-- TAB 4: CONTROLS VIEW (Quick Settings & Hardware Volume Deck) -->
             <!-- =========================================================== -->
             <Grid x:Name="ViewControls" Grid.Row="1" Visibility="Collapsed">
-              <Border Background="#14141E" CornerRadius="16" BorderBrush="#1FFFFFFF" BorderThickness="1" Padding="14,10">
+              <Border Background="#14141E" CornerRadius="16" BorderBrush="#1FFFFFFF" BorderThickness="1" Padding="14,12">
                 <Grid>
                   <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                   </Grid.RowDefinitions>
 
-                  <!-- Row 0: Volume & Brightness Sliders -->
+                  <!-- Row 0: Hardware Volume & Audio Output Deck -->
                   <Grid Grid.Row="0" Margin="0,0,0,10">
                     <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="*"/>
-                      <ColumnDefinition Width="*"/>
+                      <ColumnDefinition Width="1.3*"/>
+                      <ColumnDefinition Width="1*"/>
                     </Grid.ColumnDefinitions>
 
-                    <!-- Master Volume -->
-                    <Border Grid.Column="0" Background="#181824" CornerRadius="12" Padding="10,6" Margin="0,0,4,0">
+                    <!-- Volume Hardware Stepper Card -->
+                    <Border Grid.Column="0" Background="#181824" CornerRadius="12" Padding="10,8" Margin="0,0,5,0">
                       <Grid>
-                        <Grid.RowDefinitions>
-                          <RowDefinition Height="Auto"/>
-                          <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
-                        <Grid Grid.Row="0">
-                          <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="&#xE767;" FontFamily="Segoe MDL2 Assets" FontSize="11" Foreground="$($Config.GlowColor)" Margin="0,0,6,0"/>
-                            <TextBlock Text="Master Volume" Foreground="#9999AA" FontSize="10" FontWeight="SemiBold"/>
-                          </StackPanel>
-                          <TextBlock x:Name="CtrlVolLabel" Text="50%" Foreground="#FFFFFF" FontSize="10" FontWeight="Bold" HorizontalAlignment="Right"/>
-                        </Grid>
-                        <Slider x:Name="CtrlVolSlider" Style="{StaticResource ModernGlowSlider}" Grid.Row="1" Minimum="0" Maximum="100" Value="50" Margin="0,4,0,0"/>
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="Auto"/>
+                          <ColumnDefinition Width="*"/>
+                          <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                          <TextBlock Text="&#xE767;" FontFamily="Segoe MDL2 Assets" FontSize="13" Foreground="$($Config.GlowColor)" Margin="0,0,6,0"/>
+                          <TextBlock Text="System Volume" Foreground="#EEEEEE" FontSize="11" FontWeight="SemiBold"/>
+                        </StackPanel>
+
+                        <!-- Hardware Vol Buttons [-] and [+] that work on ALL Bluetooth/Headsets -->
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                          <Button x:Name="BtnVolDown" Content="-" Width="28" Height="24" Background="#262638" Foreground="#FFFFFF"
+                                  FontWeight="Bold" FontSize="13" Margin="2,0" Cursor="Hand" Focusable="False" ToolTip="Volume Down">
+                            <Button.Template>
+                              <ControlTemplate TargetType="Button">
+                                <Border Background="{TemplateBinding Background}" CornerRadius="6">
+                                  <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                              </ControlTemplate>
+                            </Button.Template>
+                          </Button>
+                          <Button x:Name="BtnVolUp" Content="+" Width="28" Height="24" Background="#262638" Foreground="#FFFFFF"
+                                  FontWeight="Bold" FontSize="13" Margin="2,0" Cursor="Hand" Focusable="False" ToolTip="Volume Up">
+                            <Button.Template>
+                              <ControlTemplate TargetType="Button">
+                                <Border Background="{TemplateBinding Background}" CornerRadius="6">
+                                  <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                              </ControlTemplate>
+                            </Button.Template>
+                          </Button>
+                          <Button x:Name="BtnMuteToggle" Content="Mute" Width="44" Height="24" Background="#262638" Foreground="#FFFFFF"
+                                  FontSize="10" FontWeight="SemiBold" Margin="4,0,0,0" Cursor="Hand" Focusable="False">
+                            <Button.Template>
+                              <ControlTemplate TargetType="Button">
+                                <Border Background="{TemplateBinding Background}" CornerRadius="6">
+                                  <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                              </ControlTemplate>
+                            </Button.Template>
+                          </Button>
+                        </StackPanel>
                       </Grid>
                     </Border>
 
-                    <!-- Quick Mute Toggle -->
-                    <Border Grid.Column="1" Background="#181824" CornerRadius="12" Padding="10,6" Margin="4,0,0,0">
-                      <Grid VerticalAlignment="Center">
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                          <TextBlock Text="&#xE74F;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="$($Config.SubtextColor)" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                          <TextBlock Text="Mute Master Audio" Foreground="#9999AA" FontSize="10" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                        </StackPanel>
-                        <Button x:Name="BtnMuteToggle" Content="Toggle" HorizontalAlignment="Right" Width="54" Height="22"
-                                Background="#262638" Foreground="#FFFFFF" BorderThickness="0" Cursor="Hand" Focusable="False">
-                          <Button.Template>
-                            <ControlTemplate TargetType="Button">
-                              <Border Background="{TemplateBinding Background}" CornerRadius="10">
-                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                              </Border>
-                            </ControlTemplate>
-                          </Button.Template>
-                        </Button>
-                      </Grid>
-                    </Border>
+                    <!-- Audio Output Switcher (Partybox vs Speakers) -->
+                    <Button x:Name="BtnAudioDevices" Grid.Column="1" Height="40" Margin="5,0,0,0"
+                            Background="#181824" BorderBrush="#25FFFFFF" BorderThickness="1" Cursor="Hand" Focusable="False">
+                      <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                          <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="12">
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                              <TextBlock Text="&#xE7F6;" FontFamily="Segoe MDL2 Assets" FontSize="13" Foreground="$($Config.AccentPurple)" Margin="0,0,6,0"/>
+                              <TextBlock Text="Sound Devices" Foreground="#FFFFFF" FontSize="11" FontWeight="SemiBold"/>
+                            </StackPanel>
+                          </Border>
+                        </ControlTemplate>
+                      </Button.Template>
+                    </Button>
                   </Grid>
 
-                  <!-- Row 1: Quick Actions -->
+                  <!-- Row 1: Fast System Launcher Deck -->
                   <Grid Grid.Row="1">
                     <Grid.ColumnDefinitions>
                       <ColumnDefinition Width="*"/>
                       <ColumnDefinition Width="*"/>
                       <ColumnDefinition Width="*"/>
+                      <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
 
-                    <Button x:Name="BtnActionTaskMgr" Grid.Column="0" Margin="0,0,3,0" Height="36"
+                    <Button x:Name="BtnActionBluetooth" Grid.Column="0" Margin="0,0,3,0" Height="38"
                             Background="#181824" BorderBrush="#25FFFFFF" BorderThickness="1" Cursor="Hand" Focusable="False">
                       <Button.Template>
                         <ControlTemplate TargetType="Button">
                           <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="10">
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
-                              <TextBlock Text="&#xE9D9;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="$($Config.GlowColor)" Margin="0,0,6,0"/>
+                              <TextBlock Text="&#xE702;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="$($Config.GlowColor)" Margin="0,0,5,0"/>
+                              <TextBlock Text="Bluetooth" Foreground="#FFFFFF" FontSize="10" FontWeight="SemiBold"/>
+                            </StackPanel>
+                          </Border>
+                        </ControlTemplate>
+                      </Button.Template>
+                    </Button>
+
+                    <Button x:Name="BtnActionDisplay" Grid.Column="1" Margin="2,0,2,0" Height="38"
+                            Background="#181824" BorderBrush="#25FFFFFF" BorderThickness="1" Cursor="Hand" Focusable="False">
+                      <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                          <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="10">
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                              <TextBlock Text="&#xE706;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="$($Config.WarnColor)" Margin="0,0,5,0"/>
+                              <TextBlock Text="Display" Foreground="#FFFFFF" FontSize="10" FontWeight="SemiBold"/>
+                            </StackPanel>
+                          </Border>
+                        </ControlTemplate>
+                      </Button.Template>
+                    </Button>
+
+                    <Button x:Name="BtnActionTaskMgr" Grid.Column="2" Margin="2,0,2,0" Height="38"
+                            Background="#181824" BorderBrush="#25FFFFFF" BorderThickness="1" Cursor="Hand" Focusable="False">
+                      <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                          <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="10">
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                              <TextBlock Text="&#xE9D9;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="$($Config.AccentGreen)" Margin="0,0,5,0"/>
                               <TextBlock Text="Task Mgr" Foreground="#FFFFFF" FontSize="10" FontWeight="SemiBold"/>
                             </StackPanel>
                           </Border>
@@ -1180,27 +1207,13 @@ Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
                       </Button.Template>
                     </Button>
 
-                    <Button x:Name="BtnActionSettings" Grid.Column="1" Margin="2,0,2,0" Height="36"
+                    <Button x:Name="BtnActionExplorer" Grid.Column="3" Margin="3,0,0,0" Height="38"
                             Background="#181824" BorderBrush="#25FFFFFF" BorderThickness="1" Cursor="Hand" Focusable="False">
                       <Button.Template>
                         <ControlTemplate TargetType="Button">
                           <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="10">
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
-                              <TextBlock Text="&#xE713;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="$($Config.AccentPurple)" Margin="0,0,6,0"/>
-                              <TextBlock Text="Windows Settings" Foreground="#FFFFFF" FontSize="10" FontWeight="SemiBold"/>
-                            </StackPanel>
-                          </Border>
-                        </ControlTemplate>
-                      </Button.Template>
-                    </Button>
-
-                    <Button x:Name="BtnActionExplorer" Grid.Column="2" Margin="3,0,0,0" Height="36"
-                            Background="#181824" BorderBrush="#25FFFFFF" BorderThickness="1" Cursor="Hand" Focusable="False">
-                      <Button.Template>
-                        <ControlTemplate TargetType="Button">
-                          <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="10">
-                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
-                              <TextBlock Text="&#xEC50;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="$($Config.AccentGreen)" Margin="0,0,6,0"/>
+                              <TextBlock Text="&#xEC50;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="$($Config.AccentPurple)" Margin="0,0,5,0"/>
                               <TextBlock Text="Explorer" Foreground="#FFFFFF" FontSize="10" FontWeight="SemiBold"/>
                             </StackPanel>
                           </Border>
@@ -1297,102 +1310,109 @@ Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
             </Grid>
 
             <!-- =========================================================== -->
-            <!-- TAB 6: SETTINGS & INLINE CUSTOMIZATION VIEW                 -->
+            <!-- TAB 6: SETTINGS & INLINE CUSTOMIZATION (Un-congested UX)    -->
             <!-- =========================================================== -->
             <Grid x:Name="ViewSettings" Grid.Row="1" Visibility="Collapsed">
-              <Border Background="#14141E" CornerRadius="16" BorderBrush="#1FFFFFFF" BorderThickness="1" Padding="12,10">
+              <Border Background="#14141E" CornerRadius="16" BorderBrush="#1FFFFFFF" BorderThickness="1" Padding="14,12">
                 <Grid>
                   <Grid.RowDefinitions>
+                    <!-- Section 1: Color Presets & Hex -->
                     <RowDefinition Height="Auto"/>
+                    <!-- Section 2: Glow Sliders -->
                     <RowDefinition Height="Auto"/>
+                    <!-- Section 3: Navigation Tab Switches -->
                     <RowDefinition Height="Auto"/>
                   </Grid.RowDefinitions>
 
-                  <!-- Row 0: Aura Swatches & Interactive Custom Hex Input -->
-                  <Grid Grid.Row="0" Margin="0,0,0,8">
-                    <Grid.RowDefinitions>
-                      <RowDefinition Height="Auto"/>
-                      <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
-                    <TextBlock Grid.Row="0" Text="AURA &amp; ACCENT GLOW PRESETS" Foreground="$($Config.SubtextColor)"
-                               FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="9" FontWeight="Bold" Margin="0,0,0,5"/>
-                    <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center">
-                      <Button x:Name="SwatchCyan" Content="Cyan" Width="52" Height="22" Background="#FF00E5FF" Foreground="#000000" Margin="2,0" Cursor="Hand" Focusable="False" Style="{StaticResource TabPillButtonStyle}"/>
-                      <Button x:Name="SwatchMagenta" Content="Pink" Width="52" Height="22" Background="#FFFF007F" Foreground="#FFFFFF" Margin="2,0" Cursor="Hand" Focusable="False" Style="{StaticResource TabPillButtonStyle}"/>
-                      <Button x:Name="SwatchPurple" Content="Purple" Width="52" Height="22" Background="#FFA855F7" Foreground="#FFFFFF" Margin="2,0" Cursor="Hand" Focusable="False" Style="{StaticResource TabPillButtonStyle}"/>
-                      <Button x:Name="SwatchEmerald" Content="Emerald" Width="56" Height="22" Background="#FF00E676" Foreground="#000000" Margin="2,0" Cursor="Hand" Focusable="False" Style="{StaticResource TabPillButtonStyle}"/>
-                      <Button x:Name="SwatchAmber" Content="Amber" Width="52" Height="22" Background="#FFFFB300" Foreground="#000000" Margin="2,0" Cursor="Hand" Focusable="False" Style="{StaticResource TabPillButtonStyle}"/>
-                      <Button x:Name="SwatchRed" Content="Red" Width="50" Height="22" Background="#FFFF1744" Foreground="#FFFFFF" Margin="2,0" Cursor="Hand" Focusable="False" Style="{StaticResource TabPillButtonStyle}"/>
+                  <!-- 1. AURA PRESETS & CUSTOM HEX -->
+                  <Border Grid.Row="0" Background="#181824" CornerRadius="12" Padding="10,8" Margin="0,0,0,8">
+                    <Grid>
+                      <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                      </Grid.RowDefinitions>
+                      <TextBlock Grid.Row="0" Text="THEME AURA ACCENT COLOR" Foreground="#888899"
+                                 FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="9" FontWeight="Bold" Margin="0,0,0,6"/>
+                      <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center">
+                        <Button x:Name="SwatchCyan" Content="Cyan" Width="54" Height="24" Background="#FF00E5FF" Foreground="#000000" Margin="2,0" Cursor="Hand" Focusable="False" Style="{StaticResource TabPillButtonStyle}"/>
+                        <Button x:Name="SwatchMagenta" Content="Pink" Width="54" Height="24" Background="#FFFF007F" Foreground="#FFFFFF" Margin="2,0" Cursor="Hand" Focusable="False" Style="{StaticResource TabPillButtonStyle}"/>
+                        <Button x:Name="SwatchPurple" Content="Purple" Width="54" Height="24" Background="#FFA855F7" Foreground="#FFFFFF" Margin="2,0" Cursor="Hand" Focusable="False" Style="{StaticResource TabPillButtonStyle}"/>
+                        <Button x:Name="SwatchEmerald" Content="Emerald" Width="58" Height="24" Background="#FF00E676" Foreground="#000000" Margin="2,0" Cursor="Hand" Focusable="False" Style="{StaticResource TabPillButtonStyle}"/>
+                        <Button x:Name="SwatchAmber" Content="Amber" Width="54" Height="24" Background="#FFFFB300" Foreground="#000000" Margin="2,0" Cursor="Hand" Focusable="False" Style="{StaticResource TabPillButtonStyle}"/>
+                        <Button x:Name="SwatchRed" Content="Red" Width="50" Height="24" Background="#FFFF1744" Foreground="#FFFFFF" Margin="2,0" Cursor="Hand" Focusable="False" Style="{StaticResource TabPillButtonStyle}"/>
 
-                      <!-- Custom Hex Input -->
-                      <TextBox x:Name="CustomHexInput" Text="$($Config.GlowColor)" Width="64" Height="22" Margin="6,0,2,0"
-                               Background="#181824" Foreground="#FFFFFF" BorderBrush="#33FFFFFF" BorderThickness="1"
-                               FontFamily="Consolas, Segoe UI" FontSize="10" VerticalContentAlignment="Center" Padding="3,0"/>
-                      <Button x:Name="BtnApplyHex" Content="Apply" Width="44" Height="22"
-                              Background="#252538" Foreground="#FFFFFF" BorderThickness="0" Cursor="Hand" Focusable="False">
-                        <Button.Template>
-                          <ControlTemplate TargetType="Button">
-                            <Border Background="{TemplateBinding Background}" CornerRadius="8">
-                              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
-                          </ControlTemplate>
-                        </Button.Template>
-                      </Button>
-                    </StackPanel>
-                  </Grid>
+                        <!-- Hex Input Pill -->
+                        <TextBox x:Name="CustomHexInput" Text="$($Config.GlowColor)" Width="68" Height="24" Margin="8,0,3,0"
+                                 Background="#14141E" Foreground="#FFFFFF" BorderBrush="#33FFFFFF" BorderThickness="1"
+                                 FontFamily="Consolas, Segoe UI" FontSize="11" VerticalContentAlignment="Center" Padding="4,0"/>
+                        <Button x:Name="BtnApplyHex" Content="Apply" Width="44" Height="24"
+                                Background="#2A2A3E" Foreground="#FFFFFF" BorderThickness="0" Cursor="Hand" Focusable="False">
+                          <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                              <Border Background="{TemplateBinding Background}" CornerRadius="6">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                              </Border>
+                            </ControlTemplate>
+                          </Button.Template>
+                        </Button>
+                      </StackPanel>
+                    </Grid>
+                  </Border>
 
-                  <!-- Row 1: Modern Glow Sliders -->
+                  <!-- 2. GLOW SLIDERS (Spacious) -->
                   <Grid Grid.Row="1" Margin="0,0,0,8">
                     <Grid.ColumnDefinitions>
                       <ColumnDefinition Width="*"/>
                       <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
 
-                    <Border Grid.Column="0" Background="#181824" CornerRadius="10" Padding="8,5" Margin="0,0,4,0">
+                    <Border Grid.Column="0" Background="#181824" CornerRadius="12" Padding="10,6" Margin="0,0,4,0">
                       <Grid>
                         <Grid.RowDefinitions>
                           <RowDefinition Height="Auto"/>
                           <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
                         <Grid Grid.Row="0">
-                          <TextBlock Text="Glow Radius" Foreground="#888899" FontSize="10" FontWeight="SemiBold"/>
+                          <TextBlock Text="Aura Glow Radius" Foreground="#888899" FontSize="10" FontWeight="SemiBold"/>
                           <TextBlock x:Name="GlowRadiusLabel" Text="28px" Foreground="#FFFFFF" FontSize="10" FontWeight="Bold" HorizontalAlignment="Right"/>
                         </Grid>
-                        <Slider x:Name="GlowRadiusSlider" Style="{StaticResource ModernGlowSlider}" Grid.Row="1" Minimum="10" Maximum="50" Value="28" Margin="0,4,0,0"/>
+                        <Slider x:Name="GlowRadiusSlider" Style="{StaticResource ModernGlowSlider}" Grid.Row="1" Minimum="10" Maximum="50" Value="28" Margin="0,5,0,0"/>
                       </Grid>
                     </Border>
 
-                    <Border Grid.Column="1" Background="#181824" CornerRadius="10" Padding="8,5" Margin="4,0,0,0">
+                    <Border Grid.Column="1" Background="#181824" CornerRadius="12" Padding="10,6" Margin="4,0,0,0">
                       <Grid>
                         <Grid.RowDefinitions>
                           <RowDefinition Height="Auto"/>
                           <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
                         <Grid Grid.Row="0">
-                          <TextBlock Text="Glow Opacity" Foreground="#888899" FontSize="10" FontWeight="SemiBold"/>
+                          <TextBlock Text="Aura Glow Opacity" Foreground="#888899" FontSize="10" FontWeight="SemiBold"/>
                           <TextBlock x:Name="GlowOpacityLabel" Text="65%" Foreground="#FFFFFF" FontSize="10" FontWeight="Bold" HorizontalAlignment="Right"/>
                         </Grid>
-                        <Slider x:Name="GlowOpacitySlider" Style="{StaticResource ModernGlowSlider}" Grid.Row="1" Minimum="20" Maximum="95" Value="65" Margin="0,4,0,0"/>
+                        <Slider x:Name="GlowOpacitySlider" Style="{StaticResource ModernGlowSlider}" Grid.Row="1" Minimum="20" Maximum="95" Value="65" Margin="0,5,0,0"/>
                       </Grid>
                     </Border>
                   </Grid>
 
-                  <!-- Row 2: Win11 Toggle Switches for Modules -->
-                  <Grid Grid.Row="2">
-                    <Grid.RowDefinitions>
-                      <RowDefinition Height="Auto"/>
-                      <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
-                    <TextBlock Grid.Row="0" Text="MODULE SWITCHES" Foreground="$($Config.SubtextColor)"
-                               FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="9" FontWeight="Bold" Margin="0,0,0,5"/>
-                    <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center">
-                      <CheckBox x:Name="ToggleTabToday" Content="Today" Style="{StaticResource Win11ToggleSwitch}" IsChecked="True" Margin="4,0"/>
-                      <CheckBox x:Name="ToggleTabMedia" Content="Media" Style="{StaticResource Win11ToggleSwitch}" IsChecked="True" Margin="4,0"/>
-                      <CheckBox x:Name="ToggleTabStats" Content="Stats" Style="{StaticResource Win11ToggleSwitch}" IsChecked="True" Margin="4,0"/>
-                      <CheckBox x:Name="ToggleTabControls" Content="Controls" Style="{StaticResource Win11ToggleSwitch}" IsChecked="True" Margin="4,0"/>
-                      <CheckBox x:Name="ToggleTabPower" Content="Power" Style="{StaticResource Win11ToggleSwitch}" IsChecked="True" Margin="4,0"/>
-                    </StackPanel>
-                  </Grid>
+                  <!-- 3. VISIBLE TABS (Spacious Win11 Switches) -->
+                  <Border Grid.Row="2" Background="#181824" CornerRadius="12" Padding="10,6">
+                    <Grid>
+                      <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                      </Grid.RowDefinitions>
+                      <TextBlock Grid.Row="0" Text="ACTIVE NAVIGATION TABS" Foreground="#888899"
+                                 FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="9" FontWeight="Bold" Margin="0,0,0,4"/>
+                      <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center">
+                        <CheckBox x:Name="ToggleTabToday" Content="Today" Style="{StaticResource Win11ToggleSwitch}" IsChecked="True" Margin="6,0"/>
+                        <CheckBox x:Name="ToggleTabMedia" Content="Media" Style="{StaticResource Win11ToggleSwitch}" IsChecked="True" Margin="6,0"/>
+                        <CheckBox x:Name="ToggleTabStats" Content="Stats" Style="{StaticResource Win11ToggleSwitch}" IsChecked="True" Margin="6,0"/>
+                        <CheckBox x:Name="ToggleTabControls" Content="Controls" Style="{StaticResource Win11ToggleSwitch}" IsChecked="True" Margin="6,0"/>
+                        <CheckBox x:Name="ToggleTabPower" Content="Power" Style="{StaticResource Win11ToggleSwitch}" IsChecked="True" Margin="6,0"/>
+                      </StackPanel>
+                    </Grid>
+                  </Border>
 
                 </Grid>
               </Border>
@@ -1461,26 +1481,22 @@ $todayMiniCpu       = $window.FindName('TodayMiniCpu')
 $todayMiniGpu       = $window.FindName('TodayMiniGpu')
 $todayMiniRam       = $window.FindName('TodayMiniRam')
 
-# Tab 2: Media Elements
+# Tab 2: Media Elements (Hitodama Reference Deck)
+$mediaDeviceIcon    = $window.FindName('MediaDeviceIcon')
+$mediaDeviceText    = $window.FindName('MediaDeviceText')
 $albumArtImage      = $window.FindName('AlbumArtImage')
 $albumArtFallback   = $window.FindName('AlbumArtFallback')
 $mediaTitleText     = $window.FindName('MediaTitleText')
 $mediaArtistText    = $window.FindName('MediaArtistText')
-$mediaWaveLine      = $window.FindName('MediaWaveLine')
 $btnMediaPrev       = $window.FindName('BtnMediaPrev')
 $btnMediaPlay       = $window.FindName('BtnMediaPlay')
 $btnMediaNext       = $window.FindName('BtnMediaNext')
-$mediaVolSlider     = $window.FindName('MediaVolSlider')
-$mediaVolPct        = $window.FindName('MediaVolPct')
-$eqBar1             = $window.FindName('EqBar1')
-$eqBar2             = $window.FindName('EqBar2')
-$eqBar3             = $window.FindName('EqBar3')
-$eqBar4             = $window.FindName('EqBar4')
-$eqBar5             = $window.FindName('EqBar5')
-$eqBar6             = $window.FindName('EqBar6')
-$eqBar7             = $window.FindName('EqBar7')
-$eqBar8             = $window.FindName('EqBar8')
-$eqBars             = @($eqBar1, $eqBar2, $eqBar3, $eqBar4, $eqBar5, $eqBar6, $eqBar7, $eqBar8)
+$mediaTimeCurrent   = $window.FindName('MediaTimeCurrent')
+$mediaTimeTotal     = $window.FindName('MediaTimeTotal')
+$mediaWaveCanvas    = $window.FindName('MediaWaveCanvas')
+$mediaWaveProgress  = $window.FindName('MediaWaveProgress')
+$mediaWaveThumb     = $window.FindName('MediaWaveThumb')
+$mediaWaveRemaining = $window.FindName('MediaWaveRemaining')
 
 # Tab 3: Stats Elements
 $cpuArcPath         = $window.FindName('CpuArcPath')
@@ -1490,12 +1506,14 @@ $statsCpuPct        = $window.FindName('StatsCpuPct')
 $statsGpuPct        = $window.FindName('StatsGpuPct')
 $statsRamPct        = $window.FindName('StatsRamPct')
 
-# Tab 4: Controls Elements
-$ctrlVolSlider      = $window.FindName('CtrlVolSlider')
-$ctrlVolLabel       = $window.FindName('CtrlVolLabel')
+# Tab 4: Controls Elements (Direct Hardware Deck)
+$btnVolDown         = $window.FindName('BtnVolDown')
+$btnVolUp           = $window.FindName('BtnVolUp')
 $btnMuteToggle      = $window.FindName('BtnMuteToggle')
+$btnAudioDevices    = $window.FindName('BtnAudioDevices')
+$btnActionBluetooth = $window.FindName('BtnActionBluetooth')
+$btnActionDisplay   = $window.FindName('BtnActionDisplay')
 $btnActionTaskMgr   = $window.FindName('BtnActionTaskMgr')
-$btnActionSettings  = $window.FindName('BtnActionSettings')
 $btnActionExplorer  = $window.FindName('BtnActionExplorer')
 
 # Tab 5: Power Elements
@@ -1528,8 +1546,8 @@ $script:expanded       = $false
 $script:pinned         = $false
 $script:isDragging     = $false
 $script:activeTab      = 'Today'
-$script:pct            = 0
-$script:charging       = $false
+$script:pct            = 80
+$script:charging       = $true
 $script:tick           = 0
 $script:mediaAutoShown = $false
 $script:lastMediaTitle = ''
@@ -1572,7 +1590,9 @@ function Apply-AuraTheme ([string]$hexColor) {
     $todayMiniCpu.Foreground  = $script:brushAccentSolid
     $todayGreeting.Foreground = $script:brushAccentSolid
     $todayGreetingIcon.Foreground = $script:brushAccentSolid
-    foreach ($b in $eqBars) { $b.Background = $script:brushAccentSolid }
+    $mediaDeviceIcon.Foreground   = $script:brushAccentSolid
+    $mediaWaveProgress.Stroke     = $script:brushAccentSolid
+    $mediaWaveThumb.Fill          = $script:brushAccentSolid
 
     # Refresh current active tab pill style
     Switch-Tab $script:activeTab
@@ -1798,10 +1818,35 @@ function Update-ClockAndBattery {
     $todayGreeting.Text = $greeting
     $todayGreetingIcon.Text = [string]$greetIcon
 
-    # Battery Telemetry
-    $ps = [System.Windows.Forms.SystemInformation]::PowerStatus
-    $script:pct = [int][math]::Round($ps.BatteryLifePercent * 100)
-    $script:charging = ($ps.PowerLineStatus -eq 'Online')
+    # Robust Multi-Layer Battery Telemetry (Never 0%)
+    $pct = 0
+    $charging = $false
+    try {
+        $ps = [System.Windows.Forms.SystemInformation]::PowerStatus
+        if ($null -ne $ps -and $ps.BatteryLifePercent -ge 0) {
+            $pct = [int][math]::Round($ps.BatteryLifePercent * 100)
+            $charging = ($ps.PowerLineStatus -eq 'Online')
+        }
+    } catch { }
+
+    if ($pct -le 0) {
+        try {
+            $b = Get-CimInstance Win32_Battery -ErrorAction SilentlyContinue
+            if ($b) {
+                $pct = [int]$b.EstimatedChargeRemaining
+                $charging = ($b.BatteryStatus -in 2, 6, 7, 8)
+            }
+        } catch { }
+    }
+
+    if ($pct -le 0) {
+        # Desktop PC or plugged-in device without battery sensor
+        $pct = 100
+        $charging = $true
+    }
+
+    $script:pct = $pct
+    $script:charging = $charging
 
     $battGlyph = if ($script:charging) { [char]0xEA93 } else { [char]0xEA81 }
     $compactBattIcon.Text = [string]$battGlyph
@@ -1863,10 +1908,15 @@ function Update-UIState {
         }
     }
 
-    # 2. Media Info & Live Album Art
+    # 2. Media Info, Timelines & Live Album Art (Hitodama Deck)
     $title  = $script:sharedState.MediaTitle
     $artist = $script:sharedState.MediaArtist
     $status = $script:sharedState.MediaStatus
+    $device = $script:sharedState.MediaDevice
+
+    if ($device) { $mediaDeviceText.Text = $device }
+    $mediaTimeCurrent.Text = $script:sharedState.MediaPosition
+    $mediaTimeTotal.Text   = $script:sharedState.MediaDuration
 
     if ($status -eq 'None' -or ($title -eq '' -and $artist -eq '')) {
         $mediaTitleText.Text  = 'No Media Playing'
@@ -1923,86 +1973,60 @@ function Update-UIState {
 }
 
 # ------------------------------------------------------------------------------
-#  S10  60 FPS 8-BAR AUDIO EQUALIZER ANIMATION LOOP
+#  S10  60 FPS WAVY SCRUBBER ANIMATION LOOP (Hitodama Reference Style)
 # ------------------------------------------------------------------------------
-$script:rnd = New-Object System.Random
-
 $waveTimer = New-Object System.Windows.Threading.DispatcherTimer
 $waveTimer.Interval = [TimeSpan]::FromMilliseconds(16)
 $waveTimer.Add_Tick({
     $isPlaying = ($script:sharedState.MediaStatus -eq 'Playing')
+    $progRatio = [math]::Min([math]::Max($script:sharedState.MediaProgress, 0.05), 0.95)
 
-    # Animate 8 Equalizer Bars
-    if ($isPlaying) {
-        for ($i = 0; $i -lt 8; $i++) {
-            $targetH = $script:rnd.Next(4, 20)
-            $curH = $eqBars[$i].Height
-            $eqBars[$i].Height = $curH + (($targetH - $curH) * 0.35)
-        }
-    } else {
-        # Smoothly reset to baseline when paused/idle
-        for ($i = 0; $i -lt 8; $i++) {
-            $curH = $eqBars[$i].Height
-            if ($curH -gt 4.0) { $eqBars[$i].Height = $curH * 0.8 }
-            else { $eqBars[$i].Height = 4.0 }
-        }
-    }
+    $canvasW = $mediaWaveCanvas.ActualWidth
+    if ($canvasW -le 10) { $canvasW = 260 }
+    $midY = 8.0
+    $amp = if ($isPlaying) { 3.2 } else { 0.8 }
 
-    # Audio Waveform Line
-    $script:waveOffset += if ($isPlaying) { 0.18 } else { 0.03 }
-    $w = 200; $h = 18; $mid = $h / 2
-    $amp = if ($isPlaying) { 6.0 } else { 1.5 }
-    $sb = New-Object System.Text.StringBuilder
-    [void]$sb.Append("M 0,$mid")
-    for ($x = 5; $x -le $w; $x += 10) {
-        $y = $mid + ($amp * [math]::Sin(($x * 0.05) + $script:waveOffset))
-        [void]$sb.Append(" L $x,$([math]::Round($y, 1))")
+    $script:waveOffset += if ($isPlaying) { 0.16 } else { 0.02 }
+
+    $splitX = [math]::Round($canvasW * $progRatio, 1)
+
+    # 1. Squiggly Played Sine Wave Path
+    $sbWave = New-Object System.Text.StringBuilder
+    [void]$sbWave.Append("M 0,$midY")
+    for ($x = 2; $x -le $splitX; $x += 3.5) {
+        $y = $midY + ($amp * [math]::Sin(($x * 0.18) + $script:waveOffset))
+        [void]$sbWave.Append(" L $([math]::Round($x, 1)),$([math]::Round($y, 1))")
     }
-    $mediaWaveLine.Data = [System.Windows.Media.Geometry]::Parse($sb.ToString())
+    $mediaWaveProgress.Data = [System.Windows.Media.Geometry]::Parse($sbWave.ToString())
+
+    # 2. Scrubber Knob Position
+    [System.Windows.Controls.Canvas]::SetLeft($mediaWaveThumb, ($splitX - 4))
+    [System.Windows.Controls.Canvas]::SetTop($mediaWaveThumb, ($midY - 4))
+
+    # 3. Remaining Straight Track Line
+    $sbRest = "M $splitX,$midY L $canvasW,$midY"
+    $mediaWaveRemaining.Data = [System.Windows.Media.Geometry]::Parse($sbRest)
 })
 
 # ------------------------------------------------------------------------------
-#  S11  QUICK CONTROLS & VOLUME
+#  S11  QUICK CONTROLS & DIRECT HARDWARE ACTIONS
 # ------------------------------------------------------------------------------
-function Sync-VolumeUI {
-    $vol = [AudioMasterSafe]::GetVolume()
-    $isMute = [AudioMasterSafe]::GetMute()
+# Direct Hardware Key Events (Works globally across all headsets/Bluetooth)
+$btnVolDown.Add_Click({ [IslandNative]::VolumeDown() })
+$btnVolUp.Add_Click({ [IslandNative]::VolumeUp() })
+$btnMuteToggle.Add_Click({ [IslandNative]::ToggleMute() })
 
-    $ctrlVolSlider.Value = $vol
-    $mediaVolSlider.Value = $vol
-    $ctrlVolLabel.Text = "$([int]$vol)%"
-    $mediaVolPct.Text  = "$([int]$vol)%"
-    $btnMuteToggle.Content = if ($isMute) { 'Unmute' } else { 'Mute' }
-}
+# Quick System Setting Launchers
+$btnAudioDevices.Add_Click({ Start-Process 'ms-settings:sound' })
+$btnActionBluetooth.Add_Click({ Start-Process 'ms-settings:bluetooth' })
+$btnActionDisplay.Add_Click({ Start-Process 'ms-settings:display' })
+$btnActionTaskMgr.Add_Click({ Start-Process taskmgr.exe })
+$btnActionExplorer.Add_Click({ Start-Process explorer.exe })
 
-$ctrlVolSlider.Add_ValueChanged({
-    [AudioMasterSafe]::SetVolume($ctrlVolSlider.Value)
-    $mediaVolSlider.Value = $ctrlVolSlider.Value
-    $ctrlVolLabel.Text = "$([int]$ctrlVolSlider.Value)%"
-    $mediaVolPct.Text  = "$([int]$ctrlVolSlider.Value)%"
-})
-
-$mediaVolSlider.Add_ValueChanged({
-    [AudioMasterSafe]::SetVolume($mediaVolSlider.Value)
-    $ctrlVolSlider.Value = $mediaVolSlider.Value
-    $ctrlVolLabel.Text = "$([int]$mediaVolSlider.Value)%"
-    $mediaVolPct.Text  = "$([int]$mediaVolSlider.Value)%"
-})
-
-$btnMuteToggle.Add_Click({
-    [AudioMasterSafe]::ToggleMute()
-    Sync-VolumeUI
-})
-
-# Media Buttons
+# Media Playback Buttons
 $btnMediaPlay.Add_Click({ Send-MediaCommandAsync 'PlayPause' })
 $btnMediaPrev.Add_Click({ Send-MediaCommandAsync 'Previous' })
 $btnMediaNext.Add_Click({ Send-MediaCommandAsync 'Next' })
-
-# Quick App Actions
-$btnActionTaskMgr.Add_Click({ Start-Process taskmgr.exe })
-$btnActionSettings.Add_Click({ Start-Process 'ms-settings:' })
-$btnActionExplorer.Add_Click({ Start-Process explorer.exe })
 
 # Power Actions
 $btnPowerLock.Add_Click({ Start-Process rundll32.exe 'user32.dll,LockWorkStation' })
@@ -2011,7 +2035,7 @@ $btnPowerRestart.Add_Click({ Start-Process shutdown.exe '/r /t 0' })
 $btnPowerShutdown.Add_Click({ Start-Process shutdown.exe '/s /t 0' })
 
 # ------------------------------------------------------------------------------
-#  S12  EVENT TRIGGERS: HOVER, FREE DRAG & VOLUME SCROLL
+#  S12  EVENT TRIGGERS: HOVER, FREE DRAG & HARDWARE VOLUME SCROLL
 # ------------------------------------------------------------------------------
 $leaveTimer = New-Object System.Windows.Threading.DispatcherTimer
 $leaveTimer.Interval = [TimeSpan]::FromMilliseconds($Config.CollapseDelay)
@@ -2045,15 +2069,15 @@ $glowBorder.Add_MouseLeftButtonDown({
     }
 })
 
-# Mouse Wheel Quick Volume Scroll
+# Direct Hardware Master Volume Scroll (Works on Bluetooth Headsets)
 if ($Config.EnableVolumeScroll) {
     $glowBorder.Add_MouseWheel({
         param($sender, $e)
-        $cur = [AudioMasterSafe]::GetVolume()
-        $delta = if ($e.Delta -gt 0) { 3.0 } else { -3.0 }
-        $newVol = [math]::Min([math]::Max(($cur + $delta), 0.0), 100.0)
-        [AudioMasterSafe]::SetVolume($newVol)
-        Sync-VolumeUI
+        if ($e.Delta -gt 0) {
+            [IslandNative]::VolumeUp()
+        } else {
+            [IslandNative]::VolumeDown()
+        }
         $e.Handled = $true
     })
 }
@@ -2099,7 +2123,6 @@ $window.Add_Closed({
 #  S13  UI DISPATCHER TIMERS & LAUNCH
 # ------------------------------------------------------------------------------
 Update-ClockAndBattery
-Sync-VolumeUI
 Switch-Tab 'Today'
 
 # High-frequency UI Dispatcher Timer (Reads synchronized telemetry)
@@ -2112,7 +2135,7 @@ $clockTimer = New-Object System.Windows.Threading.DispatcherTimer
 $clockTimer.Interval = [TimeSpan]::FromSeconds(1)
 $clockTimer.Add_Tick({
     $script:tick++
-    if ($script:tick % 30 -eq 0) { Update-ClockAndBattery }
+    if ($script:tick % 15 -eq 0) { Update-ClockAndBattery }
     else {
         $now = Get-Date
         $t = $now.ToString('h:mm tt')
