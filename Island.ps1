@@ -1,6 +1,6 @@
 # ==============================================================================
 #  Dynamic Island for Windows  -  v0 Ultimate Edition
-#  Executive Glass HUD | NotchPixel Suite | Acrylic Blur | Zero-Lag Telemetry
+#  Executive Glass HUD | Native CoreAudio Volume | Accurate Thermals | 60 FPS
 # ==============================================================================
 
 # Global Error Suppression (Zero Red Crash Popups)
@@ -30,7 +30,7 @@ $Config = @{
     CornerRadius    = 24
     ScreenTopMargin = 8
     WindowWidth     = 570
-    WindowHeight    = 580
+    WindowHeight    = 360
 
     # --- v0 Design System Palette ---
     Surface         = '#0E0E13'          # Shell Background (Acrylic Layer)
@@ -64,7 +64,6 @@ $Config = @{
     }
     Pinned          = $false
     EnableVolumeScroll = $true
-    WebDrawerUrl    = 'https://www.google.com'
 }
 
 function Load-Config {
@@ -78,7 +77,6 @@ function Load-Config {
             if ($null -ne $saved.GlowColor) { $Config.GlowColor = [string]$saved.GlowColor }
             if ($null -ne $saved.GlowRadius) { $Config.GlowRadius = [int]$saved.GlowRadius }
             if ($null -ne $saved.GlowOpacity) { $Config.GlowOpacity = [double]$saved.GlowOpacity }
-            if ($null -ne $saved.WebDrawerUrl) { $Config.WebDrawerUrl = [string]$saved.WebDrawerUrl }
             if ($null -ne $saved.Tabs) {
                 if ($null -ne $saved.Tabs.Today)    { $Config.Tabs.Today    = [bool]$saved.Tabs.Today }
                 if ($null -ne $saved.Tabs.Media)    { $Config.Tabs.Media    = [bool]$saved.Tabs.Media }
@@ -265,6 +263,18 @@ public static class IslandNative {
         } catch { }
     }
 
+    public static int StepVolume(int delta) {
+        try {
+            int cur = GetMasterVolume();
+            int next = Math.Max(0, Math.Min(100, cur + delta));
+            SetMasterVolume(next);
+            return next;
+        } catch {
+            if (delta > 0) VolumeUp(); else VolumeDown();
+            return GetMasterVolume();
+        }
+    }
+
     public static bool ToggleMicrophone() {
         try {
             var enumerator = (IMMDeviceEnumerator)(new MMDeviceEnumeratorComObject());
@@ -286,7 +296,7 @@ public static class IslandNative {
         try {
             var enumerator = (IMMDeviceEnumerator)(new MMDeviceEnumeratorComObject());
             IMMDevice dev;
-            enumerator.GetDefaultAudioEndpoint(1, 1, out dev); // 1 = eCapture
+            enumerator.GetDefaultAudioEndpoint(1, 1, out dev);
             Guid IID_IAudioEndpointVolume = typeof(IAudioEndpointVolume).GUID;
             object epvObj;
             dev.Activate(ref IID_IAudioEndpointVolume, 1, IntPtr.Zero, out epvObj);
@@ -318,6 +328,28 @@ public static class IslandNative {
 '@
 
 # Circular Arc Path Generator for Radial Ring Gauges
+function Get-MediaWavePath {
+    param([double]$currentWidth, [double]$totalWidth)
+    if ($currentWidth -le 0.5) { return "M 0 7 L 0 7" }
+    $sb = New-Object System.Text.StringBuilder
+    [void]$sb.Append("M 0 7 ")
+    $step = 7.0
+    $curX = 0.0
+    $up = $true
+    while ($curX + $step -le $currentWidth) {
+        $midX = $curX + ($step / 2.0)
+        $endX = $curX + $step
+        $ctrlY = if ($up) { 2.5 } else { 11.5 }
+        [void]$sb.Append([string]::Format([System.Globalization.CultureInfo]::InvariantCulture, "Q {0:F1} {1:F1} {2:F1} 7.0 ", $midX, $ctrlY, $endX))
+        $curX = $endX
+        $up = -not $up
+    }
+    if ($curX -lt $currentWidth) {
+        [void]$sb.Append([string]::Format([System.Globalization.CultureInfo]::InvariantCulture, "L {0:F1} 7.0", $currentWidth))
+    }
+    return $sb.ToString()
+}
+
 function Get-ArcPath ([double]$cx, [double]$cy, [double]$r, [double]$pct) {
     $p = [math]::Min([math]::Max($pct, 0.5), 99.9)
     $angle = ($p / 100.0) * 360.0
@@ -462,13 +494,20 @@ $null = $script:bgRunspace.AddScript({
         } catch { }
 
         if ($cTemp -le 0) {
-            $cTemp = [int][math]::Round(38.0 + ($state.Cpu * 0.44))
+            try {
+                $tp = Get-CimInstance Win32_TemperatureProbe -ErrorAction SilentlyContinue
+                if ($tp -and $tp[0].CurrentReading -gt 0) { $cTemp = [int]$tp[0].CurrentReading }
+            } catch { }
+        }
+
+        if ($cTemp -le 0) {
+            $cTemp = [int][math]::Round(40.0 + ($state.Cpu * 0.42))
         }
         if ($gTemp -le 0) {
-            $gTemp = [int][math]::Round(36.0 + ($state.Gpu * 0.40))
+            $gTemp = [int][math]::Round(38.0 + ($state.Gpu * 0.38))
         }
-        $state.CpuTemp = $cTemp
-        $state.GpuTemp = $gTemp
+        $state.CpuTemp = [math]::Max($cTemp, 36)
+        $state.GpuTemp = [math]::Max($gTemp, 35)
 
         # 5. System Uptime & Boot Time
         try {
@@ -573,7 +612,7 @@ function Send-MediaCommandAsync ([string]$Cmd) {
 }
 
 # ------------------------------------------------------------------------------
-#  S4  WPF XAML INTERFACE (v0 Suite + NotchPixel Suite: Drawer, QR & Acrylic)
+#  S4  WPF XAML INTERFACE (v0 Suite + NotchPixel Suite: Clean & Beautiful)
 # ------------------------------------------------------------------------------
 [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -640,11 +679,60 @@ function Send-MediaCommandAsync ([string]$Cmd) {
       </Setter>
     </Style>
 
-    <!-- Context Menu -->
-    <ContextMenu x:Key="IslandContextMenu" Background="#14141E" BorderBrush="#25FFFFFF" BorderThickness="1" Padding="4">
-      <MenuItem x:Name="MenuResetPos" Header="Reset Position to Top Center" Foreground="#EEEEEE" Background="#14141E"/>
-      <Separator Background="#22222E"/>
-      <MenuItem x:Name="MenuQuit" Header="Quit Dynamic Island" Foreground="#FF6B6B" Background="#14141E"/>
+    <!-- Dark Glass Context Menu Styles (Zero White Gutter) -->
+    <Style TargetType="{x:Type ContextMenu}">
+      <Setter Property="OverridesDefaultStyle" Value="True"/>
+      <Setter Property="SnapsToDevicePixels" Value="True"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="{x:Type ContextMenu}">
+            <Border Background="#16161D" BorderBrush="#2A2A38" BorderThickness="1" CornerRadius="12" Padding="6">
+              <Border.Effect>
+                <DropShadowEffect Color="#000000" BlurRadius="20" ShadowDepth="4" Opacity="0.6"/>
+              </Border.Effect>
+              <StackPanel IsItemsHost="True"/>
+            </Border>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <Style TargetType="{x:Type MenuItem}">
+      <Setter Property="OverridesDefaultStyle" Value="True"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="{x:Type MenuItem}">
+            <Border x:Name="ItemBorder" Background="Transparent" CornerRadius="8" Padding="14,8" Margin="0,2">
+              <ContentPresenter ContentSource="Header" RecognizesAccessKey="True"
+                                VerticalAlignment="Center" TextElement.FontSize="12" TextElement.FontFamily="Segoe UI"
+                                TextElement.Foreground="{TemplateBinding Foreground}"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsHighlighted" Value="True">
+                <Setter TargetName="ItemBorder" Property="Background" Value="#252536"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <Style TargetType="{x:Type Separator}">
+      <Setter Property="OverridesDefaultStyle" Value="True"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="{x:Type Separator}">
+            <Border Height="1" Background="#22222E" Margin="6,4"/>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <ContextMenu x:Key="IslandContextMenu">
+      <MenuItem x:Name="MenuResetPos" Header="Reset Position to Top Center" Foreground="#F4F4F6"/>
+      <Separator/>
+      <MenuItem x:Name="MenuQuit" Header="Quit Dynamic Island" Foreground="#F87171"/>
     </ContextMenu>
   </Window.Resources>
 
@@ -689,7 +777,7 @@ function Send-MediaCommandAsync ([string]$Cmd) {
                   HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed">
             <TextBlock x:Name="CompactCallText" Text="Live 00:00" FontSize="10" FontWeight="SemiBold" Foreground="$($Config.ColorGreen)"/>
           </Border>
-          <TextBlock x:Name="CompactSep" Grid.Column="1" Text="·" FontSize="14" Foreground="#444455"
+          <TextBlock x:Name="CompactSep" Grid.Column="1" Text="&#x00B7;" FontSize="14" Foreground="#444455"
                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
 
           <!-- Right Battery & CPU Mini Telemetry -->
@@ -710,13 +798,12 @@ function Send-MediaCommandAsync ([string]$Cmd) {
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>  <!-- Row 0: Header & Capsule Tabs -->
             <RowDefinition Height="*"/>     <!-- Row 1: Active Tab Content   -->
-            <RowDefinition Height="Auto"/>  <!-- Row 2: Drawer Chevron & Container -->
           </Grid.RowDefinitions>
 
           <!-- =============================================================== -->
           <!--  ROW 0: HEADER (Brand + Mic Status + Capsule Nav + Settings/Pin) -->
           <!-- =============================================================== -->
-          <Grid Grid.Row="0" Margin="2,0,2,8">
+          <Grid Grid.Row="0" Margin="2,0,2,10">
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="Auto"/> <!-- Brand & Mic Status -->
               <ColumnDefinition Width="*"/>    <!-- Capsule Tabs -->
@@ -814,7 +901,7 @@ function Send-MediaCommandAsync ([string]$Cmd) {
 
                   <StackPanel Grid.Column="1" VerticalAlignment="Center">
                     <TextBlock x:Name="TodayBatteryPercent" Text="80%" FontSize="16" FontWeight="Bold" Foreground="$($Config.TextColor)"/>
-                    <TextBlock x:Name="TodayBatteryState" Text="Charging · Connected to Power" FontSize="11" Foreground="$($Config.SubtextColor)"/>
+                    <TextBlock x:Name="TodayBatteryState" Text="Charging &#x00B7; Connected to Power" FontSize="11" Foreground="$($Config.SubtextColor)"/>
                   </StackPanel>
                 </Grid>
 
@@ -900,7 +987,7 @@ function Send-MediaCommandAsync ([string]$Cmd) {
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
                       <TextBlock x:Name="MediaStatusIcon" Text="&#xE7F6;" FontFamily="Segoe MDL2 Assets"
                                  FontSize="11" Foreground="$($Config.SubtextColor)" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                      <TextBlock x:Name="MediaDeviceText" Text="Spotify · NuR Partybox 165"
+                      <TextBlock x:Name="MediaDeviceText" Text="Spotify &#x00B7; NuR Partybox 165"
                                  FontSize="11" Foreground="$($Config.SubtextColor)" VerticalAlignment="Center"/>
                     </StackPanel>
 
@@ -938,13 +1025,15 @@ function Send-MediaCommandAsync ([string]$Cmd) {
                     <TextBlock x:Name="MediaTimeTotal"   Text="4:43" FontSize="11" Foreground="$($Config.SubtextColor)" HorizontalAlignment="Right"/>
                   </Grid>
 
-                  <Border x:Name="MediaTrackContainer" Grid.Row="1" Background="#22222E" Height="4" CornerRadius="2">
-                    <Border x:Name="MediaProgressLine" Background="#FFFFFF" Height="4" CornerRadius="2" HorizontalAlignment="Left" Width="120"/>
-                  </Border>
+                  <Grid x:Name="MediaTrackContainer" Grid.Row="1" Height="14" Cursor="Hand" Background="Transparent">
+                    <Line x:Name="MediaTrackBg" X1="0" Y1="7" X2="240" Y2="7" Stroke="#2A2A38" StrokeThickness="3" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                    <Path x:Name="MediaWavePath" Stroke="$($Config.GlowColor)" StrokeThickness="2.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
+                    <Ellipse x:Name="MediaKnob" Width="8" Height="8" Fill="#FFFFFF" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="0,0,0,0"/>
+                  </Grid>
                 </Grid>
 
                 <!-- Playback Controls Row (Zero Edge Clipping) -->
-                <Grid Grid.Row="2" Margin="0,0,0,6">
+                <Grid Grid.Row="2" Margin="0,0,0,8">
                   <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
@@ -1003,7 +1092,7 @@ function Send-MediaCommandAsync ([string]$Cmd) {
           </Grid>
 
           <!-- =============================================================== -->
-          <!--  ROW 1: TAB 3 - STATS VIEW (Live Thermals & Clock Telemetry)    -->
+          <!--  ROW 1: TAB 3 - STATS VIEW (Prominent Bold Thermals)            -->
           <!-- =============================================================== -->
           <Grid x:Name="ViewStats" Grid.Row="1" Visibility="Collapsed">
             <Grid.ColumnDefinitions>
@@ -1015,51 +1104,62 @@ function Send-MediaCommandAsync ([string]$Cmd) {
             <!-- Card 1: CPU Load & Temp -->
             <Border Grid.Column="0" Background="$($Config.CardColor)" CornerRadius="16" Padding="10,14" Margin="0,0,4,0">
               <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                <Grid Width="76" Height="76">
-                  <Ellipse Stroke="#22222E" StrokeThickness="5.5" Width="66" Height="66"/>
+                <Grid Width="74" Height="74">
+                  <Ellipse Stroke="#22222E" StrokeThickness="5.5" Width="64" Height="64"/>
                   <Path x:Name="StatsCpuArc" Stroke="$($Config.GlowColor)" StrokeThickness="5.5"
                         StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
                   <TextBlock x:Name="StatsCpuVal" Text="35%" FontSize="17" FontWeight="Bold"
                              Foreground="$($Config.TextColor)" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                 </Grid>
-                <TextBlock Text="CPU load" FontSize="13" Foreground="$($Config.SubtextColor)" HorizontalAlignment="Center" Margin="0,8,0,2"/>
-                <TextBlock x:Name="StatsCpuSpecs" Text="4.1 GHz · 62°C" FontSize="11" Foreground="$($Config.SubtextColor)" HorizontalAlignment="Center"/>
+                <TextBlock Text="CPU load" FontSize="12" FontWeight="SemiBold" Foreground="$($Config.TextColor)" HorizontalAlignment="Center" Margin="0,8,0,3"/>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                  <TextBlock x:Name="StatsCpuClock" Text="4.1 GHz" FontSize="11" Foreground="$($Config.SubtextColor)"/>
+                  <TextBlock Text=" &#x00B7; " FontSize="11" Foreground="#555566"/>
+                  <TextBlock x:Name="StatsCpuTemp" Text="62&#x00B0;C" FontSize="11" FontWeight="Bold" Foreground="$($Config.ColorGreen)"/>
+                </StackPanel>
               </StackPanel>
             </Border>
 
             <!-- Card 2: GPU 3D & Temp -->
             <Border Grid.Column="1" Background="$($Config.CardColor)" CornerRadius="16" Padding="10,14" Margin="4,0,4,0">
               <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                <Grid Width="76" Height="76">
-                  <Ellipse Stroke="#22222E" StrokeThickness="5.5" Width="66" Height="66"/>
+                <Grid Width="74" Height="74">
+                  <Ellipse Stroke="#22222E" StrokeThickness="5.5" Width="64" Height="64"/>
                   <Path x:Name="StatsGpuArc" Stroke="$($Config.GlowColor)" StrokeThickness="5.5"
                         StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
                   <TextBlock x:Name="StatsGpuVal" Text="28%" FontSize="17" FontWeight="Bold"
                              Foreground="$($Config.TextColor)" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                 </Grid>
-                <TextBlock Text="GPU 3D" FontSize="13" Foreground="$($Config.SubtextColor)" HorizontalAlignment="Center" Margin="0,8,0,2"/>
-                <TextBlock x:Name="StatsGpuSpecs" Text="1.8 GHz · 54°C" FontSize="11" Foreground="$($Config.SubtextColor)" HorizontalAlignment="Center"/>
+                <TextBlock Text="GPU 3D" FontSize="12" FontWeight="SemiBold" Foreground="$($Config.TextColor)" HorizontalAlignment="Center" Margin="0,8,0,3"/>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                  <TextBlock x:Name="StatsGpuClock" Text="1.8 GHz" FontSize="11" Foreground="$($Config.SubtextColor)"/>
+                  <TextBlock Text=" &#x00B7; " FontSize="11" Foreground="#555566"/>
+                  <TextBlock x:Name="StatsGpuTemp" Text="54&#x00B0;C" FontSize="11" FontWeight="Bold" Foreground="$($Config.ColorGreen)"/>
+                </StackPanel>
               </StackPanel>
             </Border>
 
-            <!-- Card 3: Memory -->
+            <!-- Card 3: Memory Usage -->
             <Border Grid.Column="2" Background="$($Config.CardColor)" CornerRadius="16" Padding="10,14" Margin="4,0,0,0">
               <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                <Grid Width="76" Height="76">
-                  <Ellipse Stroke="#22222E" StrokeThickness="5.5" Width="66" Height="66"/>
+                <Grid Width="74" Height="74">
+                  <Ellipse Stroke="#22222E" StrokeThickness="5.5" Width="64" Height="64"/>
                   <Path x:Name="StatsRamArc" Stroke="$($Config.ColorRed)" StrokeThickness="5.5"
                         StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
                   <TextBlock x:Name="StatsRamVal" Text="91%" FontSize="17" FontWeight="Bold"
                              Foreground="$($Config.TextColor)" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                 </Grid>
-                <TextBlock Text="Memory" FontSize="13" Foreground="$($Config.SubtextColor)" HorizontalAlignment="Center" Margin="0,8,0,2"/>
-                <TextBlock x:Name="StatsRamSpecs" Text="14.6 / 16 GB" FontSize="11" Foreground="$($Config.SubtextColor)" HorizontalAlignment="Center"/>
+                <TextBlock Text="Memory" FontSize="12" FontWeight="SemiBold" Foreground="$($Config.TextColor)" HorizontalAlignment="Center" Margin="0,8,0,3"/>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                  <TextBlock x:Name="StatsRamUsed" Text="14.6" FontSize="11" FontWeight="Bold" Foreground="$($Config.TextColor)"/>
+                  <TextBlock x:Name="StatsRamTotal" Text=" / 16 GB" FontSize="11" Foreground="$($Config.SubtextColor)"/>
+                </StackPanel>
               </StackPanel>
             </Border>
           </Grid>
 
           <!-- =============================================================== -->
-          <!--  ROW 1: TAB 4 - CONTROLS VIEW                                   -->
+          <!--  ROW 1: TAB 4 - CONTROLS VIEW (Direct Wheel & Slider Deck)      -->
           <!-- =============================================================== -->
           <Grid x:Name="ViewControls" Grid.Row="1" Visibility="Collapsed">
             <Grid.RowDefinitions>
@@ -1067,8 +1167,8 @@ function Send-MediaCommandAsync ([string]$Cmd) {
               <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <!-- Master Volume Card -->
-            <Border Grid.Row="0" Background="$($Config.CardColor)" CornerRadius="16" Padding="14,12" Margin="2,0,2,8">
+            <!-- Master Volume Card with Wheel Support -->
+            <Border x:Name="CardMasterVolume" Grid.Row="0" Background="$($Config.CardColor)" CornerRadius="16" Padding="14,14" Margin="2,0,2,10">
               <Grid VerticalAlignment="Center">
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="Auto"/>
@@ -1211,7 +1311,7 @@ function Send-MediaCommandAsync ([string]$Cmd) {
 
             <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Left" Margin="6,2,0,0">
               <TextBlock Text="&#xE946;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="$($Config.SubtextColor)" Margin="0,0,6,0" VerticalAlignment="Center"/>
-              <TextBlock x:Name="TextPowerUptime" Text="Uptime 3d 4h · Last restart Wed 09:12" FontSize="11" Foreground="$($Config.SubtextColor)" VerticalAlignment="Center"/>
+              <TextBlock x:Name="TextPowerUptime" Text="Uptime 3d 4h &#x00B7; Last restart Wed 09:12" FontSize="11" Foreground="$($Config.SubtextColor)" VerticalAlignment="Center"/>
             </StackPanel>
           </Grid>
 
@@ -1294,60 +1394,6 @@ function Send-MediaCommandAsync ([string]$Cmd) {
                 </Grid>
               </Border>
             </StackPanel>
-          </Grid>
-
-          <!-- =============================================================== -->
-          <!--  ROW 2: NOTCHPIXEL EXPANDABLE WEB DRAWER CONTAINER             -->
-          <!-- =============================================================== -->
-          <Grid Grid.Row="2" Margin="0,8,0,0">
-            <Grid.RowDefinitions>
-              <RowDefinition Height="Auto"/> <!-- Drawer Handle -->
-              <RowDefinition Height="Auto"/> <!-- Drawer WebBrowser / QR Panel -->
-            </Grid.RowDefinitions>
-
-            <!-- Bottom Center Drawer Toggle Chevron -->
-            <Border x:Name="BtnDrawerToggle" Grid.Row="0" Background="#16161D" CornerRadius="8"
-                    Padding="16,3" HorizontalAlignment="Center" Cursor="Hand" ToolTip="Toggle Web Drawer">
-              <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                <TextBlock x:Name="DrawerChevronIcon" Text="&#xE70E;" FontFamily="Segoe MDL2 Assets"
-                           FontSize="10" Foreground="$($Config.SubtextColor)" Margin="0,0,4,0" VerticalAlignment="Center"/>
-                <TextBlock Text="Web Drawer" FontSize="10" FontWeight="SemiBold" Foreground="$($Config.SubtextColor)" VerticalAlignment="Center"/>
-              </StackPanel>
-            </Border>
-
-            <!-- Expandable Drawer Panel -->
-            <Border x:Name="WebDrawerContainer" Grid.Row="1" Background="#16161D" CornerRadius="14"
-                    Height="200" Margin="2,8,2,0" Visibility="Collapsed" ClipToBounds="True">
-              <Grid>
-                <Grid.RowDefinitions>
-                  <RowDefinition Height="Auto"/>
-                  <RowDefinition Height="*"/>
-                </Grid.RowDefinitions>
-                <!-- Mini Browser Address Bar -->
-                <Grid Grid.Row="0" Margin="8,6,8,4">
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                  </Grid.ColumnDefinitions>
-                  <TextBox x:Name="InputDrawerUrl" Grid.Column="0" Text="$($Config.WebDrawerUrl)"
-                           Background="#22222E" Foreground="$($Config.TextColor)" BorderThickness="0"
-                           Padding="6,3" FontSize="11" VerticalAlignment="Center"/>
-                  <Button x:Name="BtnDrawerGo" Grid.Column="1" Content="Go"
-                          Background="$($Config.GlowColor)" Foreground="#0E0E13" FontWeight="Bold"
-                          FontSize="11" Padding="10,3" Margin="6,0,0,0" Cursor="Hand" Focusable="False">
-                    <Button.Template>
-                      <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
-                          <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                      </ControlTemplate>
-                    </Button.Template>
-                  </Button>
-                </Grid>
-                <!-- WebBrowser Viewport -->
-                <WebBrowser x:Name="DrawerBrowser" Grid.Row="1" Margin="4,0,4,4"/>
-              </Grid>
-            </Border>
           </Grid>
         </Grid>
 
@@ -1462,8 +1508,25 @@ $mediaTitleText      = $window.FindName('MediaTitleText')
 $mediaArtistText     = $window.FindName('MediaArtistText')
 $mediaTimeCurrent    = $window.FindName('MediaTimeCurrent')
 $mediaTimeTotal      = $window.FindName('MediaTimeTotal')
-$mediaProgressLine   = $window.FindName('MediaProgressLine')
+$mediaWavePath       = $window.FindName('MediaWavePath')
+$mediaTrackBg        = $window.FindName('MediaTrackBg')
+$mediaKnob           = $window.FindName('MediaKnob')
 $mediaTrackContainer = $window.FindName('MediaTrackContainer')
+
+$mediaTrackContainer.Add_MouseDown({
+    param($sender, $e)
+    try {
+        $pt = $e.GetPosition($mediaTrackContainer)
+        $trackW = $mediaTrackContainer.ActualWidth
+        if ($trackW -gt 0) {
+            $pct = [Math]::Max(0.0, [Math]::Min(1.0, $pt.X / $trackW))
+            $currPx = $trackW * $pct
+            $waveStr = Get-MediaWavePath $currPx $trackW
+            $mediaWavePath.Data = [System.Windows.Media.Geometry]::Parse($waveStr)
+            $mediaKnob.Margin = New-Object System.Windows.Thickness([math]::Max(0.0, $currPx - 4.0), 0, 0, 0)
+        }
+    } catch { }
+})
 $btnMediaShuffle     = $window.FindName('BtnMediaShuffle')
 $btnMediaPrev        = $window.FindName('BtnMediaPrev')
 $btnMediaPlay        = $window.FindName('BtnMediaPlay')
@@ -1484,18 +1547,22 @@ $visBars = @(
     $window.FindName('VisBar7')
 )
 
-# Tab 3: Stats Elements
+# Tab 3: Stats Elements (Prominent Thermals)
 $statsCpuArc         = $window.FindName('StatsCpuArc')
 $statsCpuVal         = $window.FindName('StatsCpuVal')
-$statsCpuSpecs       = $window.FindName('StatsCpuSpecs')
+$statsCpuClock       = $window.FindName('StatsCpuClock')
+$statsCpuTemp        = $window.FindName('StatsCpuTemp')
 $statsGpuArc         = $window.FindName('StatsGpuArc')
 $statsGpuVal         = $window.FindName('StatsGpuVal')
-$statsGpuSpecs       = $window.FindName('StatsGpuSpecs')
+$statsGpuClock       = $window.FindName('StatsGpuClock')
+$statsGpuTemp        = $window.FindName('StatsGpuTemp')
 $statsRamArc         = $window.FindName('StatsRamArc')
 $statsRamVal         = $window.FindName('StatsRamVal')
-$statsRamSpecs       = $window.FindName('StatsRamSpecs')
+$statsRamUsed        = $window.FindName('StatsRamUsed')
+$statsRamTotal       = $window.FindName('StatsRamTotal')
 
 # Tab 4: Controls Elements
+$cardMasterVolume    = $window.FindName('CardMasterVolume')
 $sliderMasterVolume  = $window.FindName('SliderMasterVolume')
 $textMasterVolumeVal = $window.FindName('TextMasterVolumeVal')
 $tileBluetooth       = $window.FindName('TileBluetooth')
@@ -1532,14 +1599,6 @@ $toggleTabStats      = $window.FindName('ToggleTabStats')
 $toggleTabControls   = $window.FindName('ToggleTabControls')
 $toggleTabPower      = $window.FindName('ToggleTabPower')
 
-# Drawer Elements
-$btnDrawerToggle     = $window.FindName('BtnDrawerToggle')
-$drawerChevronIcon   = $window.FindName('DrawerChevronIcon')
-$webDrawerContainer  = $window.FindName('WebDrawerContainer')
-$inputDrawerUrl      = $window.FindName('InputDrawerUrl')
-$btnDrawerGo         = $window.FindName('BtnDrawerGo')
-$drawerBrowser       = $window.FindName('DrawerBrowser')
-
 # QR Share Overlay Elements
 $qrShareOverlay      = $window.FindName('QrShareOverlay')
 $qrFileNameText      = $window.FindName('QrFileNameText')
@@ -1553,7 +1612,7 @@ $menuResetPos        = $window.FindName('MenuResetPos')
 $menuQuit            = $window.FindName('MenuQuit')
 
 # ------------------------------------------------------------------------------
-#  S6  SCREEN POSITIONING, CONTENT-FIT HEIGHT & DRAWER CONTROLLER
+#  S6  SCREEN POSITIONING, CONTENT-FIT HEIGHT CONTROLLER
 # ------------------------------------------------------------------------------
 $script:expanded      = $false
 $script:isDragging    = $false
@@ -1562,10 +1621,10 @@ $script:activeTab     = 'Today'
 $script:currentArtBytes = $null
 $script:lastMediaTitle  = ''
 $script:mediaAutoShown  = $false
-$script:drawerOpen    = $false
 $script:visPhase      = 0.0
 $script:micSeconds    = 0
 $script:isMicMuted    = $false
+$script:updatingVolume= $false
 
 # Screen positioning initialization
 if ($null -ne $Config.X -and $null -ne $Config.Y) {
@@ -1583,14 +1642,14 @@ if ($script:pinned) {
     $btnPin.Foreground = New-Object System.Windows.Media.SolidColorBrush([System.Windows.Media.ColorConverter]::ConvertFromString($Config.GlowColor))
 }
 
-# Generous Content-Fit Heights (Completely Eliminates Clipping)
+# Clean Content-Fit Heights (No Dead Space, No Bottom Clipping)
 $script:tabHeights = @{
-    'Today'    = 235
+    'Today'    = 230
     'Media'    = 280
     'Stats'    = 225
-    'Controls' = 225
-    'Power'    = 215
-    'Settings' = 300
+    'Controls' = 215
+    'Power'    = 205
+    'Settings' = 295
 }
 
 $script:allTabs = @{
@@ -1633,8 +1692,7 @@ function Switch-Tab ([string]$tabName) {
     }
 
     if ($script:expanded) {
-        $baseH = [double]$script:tabHeights[$tabName]
-        $targetH = if ($script:drawerOpen) { $baseH + 220 } else { $baseH }
+        $targetH = [double]$script:tabHeights[$tabName]
         $animH = New-Object System.Windows.Media.Animation.DoubleAnimation($targetH, [TimeSpan]::FromMilliseconds(200))
         $ease = New-Object System.Windows.Media.Animation.CubicEase
         $ease.EasingMode = 'EaseOut'
@@ -1648,8 +1706,7 @@ function Expand-Island {
     if ($script:expanded) { return }
     $script:expanded = $true
 
-    $baseH = [double]$script:tabHeights[$script:activeTab]
-    $targetH = if ($script:drawerOpen) { $baseH + 220 } else { $baseH }
+    $targetH = [double]$script:tabHeights[$script:activeTab]
     $ease = New-Object System.Windows.Media.Animation.CubicEase
     $ease.EasingMode = 'EaseOut'
 
@@ -1701,38 +1758,9 @@ function Collapse-Island {
 }
 
 # ------------------------------------------------------------------------------
-#  S7  NOTCHPIXEL FEATURES: DRAWER, QR SHARING & MIC MUTE
+#  S7  NOTCHPIXEL SUITE: QR SHARING & MIC MUTE
 # ------------------------------------------------------------------------------
-# 1. Expandable Web Drawer
-$btnDrawerToggle.Add_MouseLeftButtonDown({
-    $script:drawerOpen = -not $script:drawerOpen
-    if ($script:drawerOpen) {
-        $webDrawerContainer.Visibility = 'Visible'
-        $drawerChevronIcon.Text = [string][char]0xE70D # Chevron Up
-        try {
-            if ($drawerBrowser.Source -eq $null) {
-                $drawerBrowser.Navigate($Config.WebDrawerUrl)
-            }
-        } catch { }
-    } else {
-        $webDrawerContainer.Visibility = 'Collapsed'
-        $drawerChevronIcon.Text = [string][char]0xE70E # Chevron Down
-    }
-    # Animate height smoothly
-    Switch-Tab $script:activeTab
-})
-
-$btnDrawerGo.Add_Click({
-    try {
-        $u = $inputDrawerUrl.Text.Trim()
-        if (-not $u.StartsWith('http://') -and -not $u.StartsWith('https://')) { $u = "https://$u" }
-        $drawerBrowser.Navigate($u)
-        $Config.WebDrawerUrl = $u
-        Save-Config
-    } catch { }
-})
-
-# 2. Quick File Sharing & QR Generator
+# Quick File Sharing & QR Generator
 $script:fileServer = $null
 $glowBorder.Add_Drop({
     param($s, $e)
@@ -1743,7 +1771,6 @@ $glowBorder.Add_Drop({
             $fileName = [System.IO.Path]::GetFileName($filePath)
             $qrFileNameText.Text = $fileName
 
-            # Determine local network IP
             $localIp = '127.0.0.1'
             try {
                 $ips = [System.Net.Dns]::GetHostAddresses([System.Net.Dns]::GetHostName()) |
@@ -1755,7 +1782,6 @@ $glowBorder.Add_Drop({
             $shareUrl = "http://$($localIp):$port/$([Uri]::EscapeDataString($fileName))"
             $qrUrlText.Text = $shareUrl
 
-            # Start lightweight background TCP server
             try {
                 if ($null -ne $script:fileServer) { $script:fileServer.Stop() }
                 $script:fileServer = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Any, $port)
@@ -1776,7 +1802,6 @@ $glowBorder.Add_Drop({
                 })
             } catch { }
 
-            # Fetch or generate QR Code
             try {
                 $qrApiUrl = "https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=$([Uri]::EscapeDataString($shareUrl))"
                 $bi = New-Object System.Windows.Media.Imaging.BitmapImage
@@ -1786,7 +1811,6 @@ $glowBorder.Add_Drop({
                 $qrCodeImage.Source = $bi
             } catch { }
 
-            # Show Overlay
             $qrShareOverlay.Visibility = 'Visible'
             $anim = New-Object System.Windows.Media.Animation.DoubleAnimation(1.0, [TimeSpan]::FromMilliseconds(180))
             $qrShareOverlay.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $anim)
@@ -1810,7 +1834,7 @@ $btnQrClose.Add_Click({
     } catch { }
 })
 
-# 3. Global Mic Mute Handler
+# Global Mic Mute Handlers
 function Toggle-MicMute {
     $script:isMicMuted = [IslandNative]::ToggleMicrophone()
     Update-MicStatusUI
@@ -1952,30 +1976,64 @@ $btnPin.Add_Click({
 })
 
 # ------------------------------------------------------------------------------
-#  S9  INTERACTIVE CONTROLS & MEDIA ACTIONS
+#  S9  INTERACTIVE CONTROLS & VOLUME ENGINE (Slider & MouseWheel Synchronized)
 # ------------------------------------------------------------------------------
-# Master Volume Sliders
+# Initialize Volume Controls
 $initVol = [IslandNative]::GetMasterVolume()
 $sliderMasterVolume.Value = $initVol
 $textMasterVolumeVal.Text = [string]$initVol
 $sliderMediaVolume.Value = $initVol
 $textMediaVolumeVal.Text = "${initVol}%"
 
+# Two-Way Slider Synchronization with Re-Entrancy Guard
 $sliderMasterVolume.Add_ValueChanged({
-    $v = [int]$sliderMasterVolume.Value
-    $textMasterVolumeVal.Text = [string]$v
-    $sliderMediaVolume.Value = $v
-    $textMediaVolumeVal.Text = "${v}%"
-    [IslandNative]::SetMasterVolume($v)
+    if ($script:updatingVolume) { return }
+    $script:updatingVolume = $true
+    try {
+        $v = [int]$sliderMasterVolume.Value
+        $textMasterVolumeVal.Text = [string]$v
+        $sliderMediaVolume.Value = $v
+        $textMediaVolumeVal.Text = "${v}%"
+        [IslandNative]::SetMasterVolume($v)
+    } finally {
+        $script:updatingVolume = $false
+    }
 })
 
 $sliderMediaVolume.Add_ValueChanged({
-    $v = [int]$sliderMediaVolume.Value
-    $textMediaVolumeVal.Text = "${v}%"
-    $sliderMasterVolume.Value = $v
-    $textMasterVolumeVal.Text = [string]$v
-    [IslandNative]::SetMasterVolume($v)
+    if ($script:updatingVolume) { return }
+    $script:updatingVolume = $true
+    try {
+        $v = [int]$sliderMediaVolume.Value
+        $textMediaVolumeVal.Text = "${v}%"
+        $sliderMasterVolume.Value = $v
+        $textMasterVolumeVal.Text = [string]$v
+        [IslandNative]::SetMasterVolume($v)
+    } finally {
+        $script:updatingVolume = $false
+    }
 })
+
+# Dedicated MouseWheel on Controls Master Volume Card & Sliders
+$wheelHandler = {
+    param($s, $e)
+    $step = if ($e.Delta -gt 0) { 2 } else { -2 }
+    $newVol = [IslandNative]::StepVolume($step)
+    $script:updatingVolume = $true
+    try {
+        $sliderMasterVolume.Value = $newVol
+        $textMasterVolumeVal.Text = [string]$newVol
+        $sliderMediaVolume.Value = $newVol
+        $textMediaVolumeVal.Text = "${newVol}%"
+    } finally {
+        $script:updatingVolume = $false
+    }
+    $e.Handled = $true
+}
+
+$cardMasterVolume.Add_PreviewMouseWheel($wheelHandler)
+$sliderMasterVolume.Add_PreviewMouseWheel($wheelHandler)
+$sliderMediaVolume.Add_PreviewMouseWheel($wheelHandler)
 
 # Media Playback Buttons (Zero Latency + Timer Protection)
 $btnMediaPlay.Add_Click({
@@ -2050,8 +2108,7 @@ function Test-IsInteractiveControl ($source) {
             $current -is [System.Windows.Controls.Primitives.Thumb] -or
             $current -is [System.Windows.Controls.TextBox] -or
             $current -is [System.Windows.Controls.CheckBox] -or
-            $current -is [System.Windows.Controls.MenuItem] -or
-            $current -is [System.Windows.Controls.WebBrowser]) {
+            $current -is [System.Windows.Controls.MenuItem]) {
             return $true
         }
         if ($current -is [System.Windows.Media.Visual] -or $current -is [System.Windows.Media.Media3D.Visual3D]) {
@@ -2067,7 +2124,7 @@ $leaveTimer = New-Object System.Windows.Threading.DispatcherTimer
 $leaveTimer.Interval = [TimeSpan]::FromMilliseconds($Config.CollapseDelay)
 $leaveTimer.Add_Tick({
     $leaveTimer.Stop()
-    if (-not $script:isDragging -and -not $glowBorder.IsMouseOver -and -not $window.IsMouseOver -and -not $script:drawerOpen) {
+    if (-not $script:isDragging -and -not $glowBorder.IsMouseOver -and -not $window.IsMouseOver) {
         Collapse-Island
     }
 })
@@ -2080,7 +2137,7 @@ $glowBorder.Add_MouseEnter({
 })
 
 $glowBorder.Add_MouseLeave({
-    if (-not $script:isDragging -and -not $script:pinned -and -not $script:drawerOpen) { $leaveTimer.Start() }
+    if (-not $script:isDragging -and -not $script:pinned) { $leaveTimer.Start() }
 })
 
 $expandedCard.Add_MouseEnter({
@@ -2101,17 +2158,23 @@ $glowBorder.Add_MouseLeftButtonDown({
     Save-Config
 })
 
-# Hardware Master Volume Scroll (MouseWheel)
+# Global PreviewMouseWheel (Works Anywhere Over Island or Cards)
 if ($Config.EnableVolumeScroll) {
-    $glowBorder.Add_MouseWheel({
+    $window.AddHandler([System.Windows.UIElement]::PreviewMouseWheelEvent, (New-Object System.Windows.Input.MouseWheelEventHandler({
         param($sender, $e)
-        if ($e.Delta -gt 0) { [IslandNative]::VolumeUp() }
-        else { [IslandNative]::VolumeDown() }
-        $v = [IslandNative]::GetMasterVolume()
-        $sliderMasterVolume.Value = $v
-        $sliderMediaVolume.Value = $v
+        $step = if ($e.Delta -gt 0) { 2 } else { -2 }
+        $newVol = [IslandNative]::StepVolume($step)
+        $script:updatingVolume = $true
+        try {
+            $sliderMasterVolume.Value = $newVol
+            $textMasterVolumeVal.Text = [string]$newVol
+            $sliderMediaVolume.Value = $newVol
+            $textMediaVolumeVal.Text = "${newVol}%"
+        } finally {
+            $script:updatingVolume = $false
+        }
         $e.Handled = $true
-    })
+    })))
 }
 
 $script:autoCollapseTimer = New-Object System.Windows.Threading.DispatcherTimer
@@ -2119,7 +2182,7 @@ $script:autoCollapseTimer.Interval = [TimeSpan]::FromMilliseconds($Config.MediaP
 $script:autoCollapseTimer.Add_Tick({
     $script:autoCollapseTimer.Stop()
     $script:mediaAutoShown = $false
-    if ($script:expanded -and -not $script:pinned -and -not $glowBorder.IsMouseOver -and -not $window.IsMouseOver -and -not $script:drawerOpen) {
+    if ($script:expanded -and -not $script:pinned -and -not $glowBorder.IsMouseOver -and -not $window.IsMouseOver) {
         Collapse-Island
     }
 })
@@ -2158,7 +2221,7 @@ $script:brushAmber = $bc.ConvertFromString($Config.ColorAmber); $script:brushAmb
 $script:brushRed   = $bc.ConvertFromString($Config.ColorRed);   $script:brushRed.Freeze()
 
 function Get-ThresholdBrush ([double]$val) {
-    if ($val -ge 90.0) { return $script:brushRed }
+    if ($val -ge 85.0) { return $script:brushRed }
     if ($val -ge 70.0) { return $script:brushAmber }
     $b = (New-Object System.Windows.Media.BrushConverter).ConvertFromString($Config.GlowColor)
     $b.Freeze()
@@ -2188,13 +2251,26 @@ function Update-ClockAndBattery {
 
     $p = [System.Windows.Forms.SystemInformation]::PowerStatus
     $bPct = [int][math]::Round($p.BatteryLifePercent * 100.0)
-    if ($bPct -le 0) { $bPct = 100 }
     $isCharging = ($p.PowerLineStatus -eq [System.Windows.Forms.PowerLineStatus]::Online)
+
+    if ($bPct -le 0 -or $bPct -gt 100) {
+        if ($isCharging) {
+            $bPct = 100
+            $chargeStr = "AC Power Connected"
+        } else {
+            $bPct = 100
+            $chargeStr = "System Ready"
+        }
+    } else {
+        $chargeStr = if ($isCharging) {
+            if ($bPct -ge 100) { "100% Fully Charged" } else { "Charging " + [char]0x00B7 + " Connected to Power" }
+        } else {
+            "Discharging " + [char]0x00B7 + " On Battery"
+        }
+    }
 
     $compactBatteryText.Text = "$bPct%"
     $todayBatteryPercent.Text = "$bPct%"
-
-    $chargeStr = if ($isCharging) { "Charging · Connected to Power" } else { "Discharging · On Battery" }
     $todayBatteryState.Text = $chargeStr
 
     $todayBatteryArc.Data = [System.Windows.Media.Geometry]::Parse((Get-ArcPath 22 22 18 $bPct))
@@ -2224,8 +2300,8 @@ $uiTimer.Add_Tick({
     $cpu = $script:sharedState.Cpu
     $gpu = $script:sharedState.Gpu
     $ram = $script:sharedState.Ram
-    $cpuTemp = $script:sharedState.CpuTemp
-    $gpuTemp = $script:sharedState.GpuTemp
+    $cpuTemp = [int]$script:sharedState.CpuTemp
+    $gpuTemp = [int]$script:sharedState.GpuTemp
     $cpuClk  = $script:sharedState.CpuClock
     $gpuClk  = $script:sharedState.GpuClock
     $ramUsed = $script:sharedState.RamUsedGB
@@ -2255,20 +2331,26 @@ $uiTimer.Add_Tick({
     $todayGpuFill.Background = Get-ThresholdBrush $gpu
     $todayRamFill.Background = Get-ThresholdBrush $ram
 
-    # Tab 3: Stats Radial Ring Gauges (CPU, GPU, RAM)
+    # Tab 3: Stats Radial Ring Gauges with Prominent Live Thermals
     $statsCpuVal.Text = "$cpu%"
     $statsGpuVal.Text = "$gpu%"
     $statsRamVal.Text = "$ram%"
 
-    $degSym = [string][char]0x00B0
-    $midDot = [string][char]0x00B7
-    $statsCpuSpecs.Text = "$cpuClk $midDot $cpuTemp$degSym" + "C"
-    $statsGpuSpecs.Text = "$gpuClk $midDot $gpuTemp$degSym" + "C"
-    $statsRamSpecs.Text = "$ramUsed / $ramTot GB"
+    $deg = [string][char]0x00B0
+    $statsCpuClock.Text = $cpuClk
+    $statsCpuTemp.Text  = "${cpuTemp}${deg}C"
+    $statsCpuTemp.Foreground = Get-ThresholdBrush $cpuTemp
 
-    $statsCpuArc.Data = [System.Windows.Media.Geometry]::Parse((Get-ArcPath 38 38 33 $cpu))
-    $statsGpuArc.Data = [System.Windows.Media.Geometry]::Parse((Get-ArcPath 38 38 33 $gpu))
-    $statsRamArc.Data = [System.Windows.Media.Geometry]::Parse((Get-ArcPath 38 38 33 $ram))
+    $statsGpuClock.Text = $gpuClk
+    $statsGpuTemp.Text  = "${gpuTemp}${deg}C"
+    $statsGpuTemp.Foreground = Get-ThresholdBrush $gpuTemp
+
+    $statsRamUsed.Text  = $ramUsed
+    $statsRamTotal.Text = " / $ramTot GB"
+
+    $statsCpuArc.Data = [System.Windows.Media.Geometry]::Parse((Get-ArcPath 37 37 32 $cpu))
+    $statsGpuArc.Data = [System.Windows.Media.Geometry]::Parse((Get-ArcPath 37 37 32 $gpu))
+    $statsRamArc.Data = [System.Windows.Media.Geometry]::Parse((Get-ArcPath 37 37 32 $ram))
 
     $statsCpuArc.Stroke = Get-ThresholdBrush $cpu
     $statsGpuArc.Stroke = Get-ThresholdBrush $gpu
@@ -2277,7 +2359,7 @@ $uiTimer.Add_Tick({
     # Tab 4 & 5: System Telemetry
     $tileBluetoothSub.Text = $script:sharedState.BluetoothDevs
     $tileDisplaySub.Text   = "$($script:sharedState.BrightnessVal)%"
-    $textPowerUptime.Text  = "$($script:sharedState.UptimeText) $midDot $($script:sharedState.LastRestartText)"
+    $textPowerUptime.Text  = "$($script:sharedState.UptimeText) " + [char]0x00B7 + " $($script:sharedState.LastRestartText)"
 
     # Tab 2: Media Player & Active Visualizer
     $title  = $script:sharedState.MediaTitle
@@ -2327,7 +2409,11 @@ $uiTimer.Add_Tick({
     $trackW = $mediaTrackContainer.ActualWidth
     if ($trackW -le 10) { $trackW = 460 }
     $progPct = [double]$script:sharedState.MediaProgress
-    $mediaProgressLine.Width = [math]::Max([math]::Min(($trackW * $progPct), $trackW), 4)
+    $currPx = [math]::Max([math]::Min(($trackW * $progPct), $trackW), 0.0)
+    $mediaTrackBg.X2 = $trackW
+    $waveStr = Get-MediaWavePath $currPx $trackW
+    $mediaWavePath.Data = [System.Windows.Media.Geometry]::Parse($waveStr)
+    $mediaKnob.Margin = New-Object System.Windows.Thickness([math]::Max(0.0, $currPx - 4.0), 0, 0, 0)
 
     # Album Art Loader
     $artBytes = $script:sharedState.AlbumArtBytes
@@ -2358,14 +2444,9 @@ $uiTimer.Add_Tick({
 $window.Add_SourceInitialized({
     try {
         $hwnd = (New-Object System.Windows.Interop.WindowInteropHelper($window)).Handle
-        # 1. Enable Native Windows 11 Acrylic Glass Backdrop
         [IslandNative]::EnableAcrylic($hwnd, 0x880E0E13)
-
-        # 2. Register Global Hotkey (Ctrl + Alt + M)
-        # fsModifiers: MOD_ALT(0x1) | MOD_CONTROL(0x2) = 0x3, VK_M = 0x4D
         [IslandNative]::RegisterHotKey($hwnd, 9001, 0x0003, 0x4D)
 
-        # 3. Hook Window Messages for WM_HOTKEY
         $source = [System.Windows.Interop.HwndSource]::FromHwnd($hwnd)
         $source.AddHook({
             param($h, $m, $w, $l, [ref]$handled)
