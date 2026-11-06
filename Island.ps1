@@ -138,6 +138,27 @@ public static class IslandNative {
         keybd_event(VK_VOLUME_MUTE, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
     }
 
+    private const byte VK_MEDIA_NEXT_TRACK = 0xB0;
+    private const byte VK_MEDIA_PREV_TRACK = 0xB1;
+    private const byte VK_MEDIA_STOP       = 0xB2;
+    private const byte VK_MEDIA_PLAY_PAUSE = 0xB3;
+
+    public static void MediaPlayPause() {
+        keybd_event(VK_MEDIA_PLAY_PAUSE, 0, 0, UIntPtr.Zero);
+        keybd_event(VK_MEDIA_PLAY_PAUSE, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+    }
+
+    public static void MediaNext() {
+        keybd_event(VK_MEDIA_NEXT_TRACK, 0, 0, UIntPtr.Zero);
+        keybd_event(VK_MEDIA_NEXT_TRACK, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+    }
+
+    public static void MediaPrev() {
+        keybd_event(VK_MEDIA_PREV_TRACK, 0, 0, UIntPtr.Zero);
+        keybd_event(VK_MEDIA_PREV_TRACK, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+    }
+
+
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
     private class MEMORYSTATUSEX {
         public uint dwLength;
@@ -455,28 +476,13 @@ $script:bgHandle = $script:bgRunspace.BeginInvoke()
 
 # Helper for asynchronous media control actions
 function Send-MediaCommandAsync ([string]$Cmd) {
-    [System.Threading.ThreadPool]::QueueUserWorkItem({
-        try {
-            Add-Type -AssemblyName System.Runtime.WindowsRuntime
-            [void][Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager, Windows.Media.Control, ContentType=WindowsRuntime]
-            $asTask = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {
-                $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and
-                $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1'
-            })[0]
-            $mgrType = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager]
-            $mgrTask = $asTask.MakeGenericMethod($mgrType).Invoke($null, @($mgrType::RequestAsync()))
-            if ($mgrTask.Wait(1500)) {
-                $sess = $mgrTask.Result.GetCurrentSession()
-                if ($null -ne $sess) {
-                    switch ($Cmd) {
-                        'PlayPause' { [void]$sess.TryTogglePlayPauseAsync() }
-                        'Previous'  { [void]$sess.TrySkipPreviousAsync() }
-                        'Next'      { [void]$sess.TrySkipNextAsync() }
-                    }
-                }
-            }
-        } catch { }
-    })
+    try {
+        switch ($Cmd) {
+            'PlayPause' { [IslandNative]::MediaPlayPause() }
+            'Previous'  { [IslandNative]::MediaPrev() }
+            'Next'      { [IslandNative]::MediaNext() }
+        }
+    } catch { }
 }
 
 # ------------------------------------------------------------------------------
@@ -1780,6 +1786,7 @@ function Expand-Island {
 
 function Collapse-Island {
     if (-not $script:expanded -or $script:pinned) { return }
+    if ($glowBorder.IsMouseOver -or $window.IsMouseOver) { return }
     $script:expanded = $false
 
     $ease = New-Object System.Windows.Media.Animation.CubicEase
@@ -2184,9 +2191,24 @@ $btnActionTaskMgr.Add_Click({ Start-Process taskmgr.exe })
 $btnActionExplorer.Add_Click({ Start-Process explorer.exe })
 
 # Media Playback Buttons
-$btnMediaPlay.Add_Click({ Send-MediaCommandAsync 'PlayPause' })
-$btnMediaPrev.Add_Click({ Send-MediaCommandAsync 'Previous' })
-$btnMediaNext.Add_Click({ Send-MediaCommandAsync 'Next' })
+$btnMediaPlay.Add_Click({
+    $script:autoCollapseTimer.Stop()
+    $leaveTimer.Stop()
+    $script:mediaAutoShown = $false
+    Send-MediaCommandAsync 'PlayPause'
+})
+$btnMediaPrev.Add_Click({
+    $script:autoCollapseTimer.Stop()
+    $leaveTimer.Stop()
+    $script:mediaAutoShown = $false
+    Send-MediaCommandAsync 'Previous'
+})
+$btnMediaNext.Add_Click({
+    $script:autoCollapseTimer.Stop()
+    $leaveTimer.Stop()
+    $script:mediaAutoShown = $false
+    Send-MediaCommandAsync 'Next'
+})
 
 # Power Actions
 $btnPowerLock.Add_Click({ Start-Process rundll32.exe 'user32.dll,LockWorkStation' })
@@ -2197,9 +2219,35 @@ $btnPowerShutdown.Add_Click({ Start-Process shutdown.exe '/s /t 0' })
 # ------------------------------------------------------------------------------
 #  S12  EVENT TRIGGERS: HOVER, FREE DRAG & HARDWARE VOLUME SCROLL
 # ------------------------------------------------------------------------------
+function Test-IsInteractiveControl ($source) {
+    if ($null -eq $source) { return $false }
+    $current = $source
+    while ($null -ne $current -and $current -ne $glowBorder -and $current -ne $window) {
+        if ($current -is [System.Windows.Controls.Primitives.ButtonBase] -or
+            $current -is [System.Windows.Controls.Primitives.RangeBase] -or
+            $current -is [System.Windows.Controls.Primitives.Thumb] -or
+            $current -is [System.Windows.Controls.TextBox] -or
+            $current -is [System.Windows.Controls.CheckBox] -or
+            $current -is [System.Windows.Controls.MenuItem]) {
+            return $true
+        }
+        if ($current -is [System.Windows.Media.Visual] -or $current -is [System.Windows.Media.Media3D.Visual3D]) {
+            $current = [System.Windows.Media.VisualTreeHelper]::GetParent($current)
+        } else {
+            break
+        }
+    }
+    return $false
+}
+
 $leaveTimer = New-Object System.Windows.Threading.DispatcherTimer
 $leaveTimer.Interval = [TimeSpan]::FromMilliseconds($Config.CollapseDelay)
-$leaveTimer.Add_Tick({ $leaveTimer.Stop(); if (-not $script:isDragging) { Collapse-Island } })
+$leaveTimer.Add_Tick({
+    $leaveTimer.Stop()
+    if (-not $script:isDragging -and -not $glowBorder.IsMouseOver -and -not $window.IsMouseOver) {
+        Collapse-Island
+    }
+})
 
 $glowBorder.Add_MouseEnter({
     $leaveTimer.Stop()
@@ -2212,21 +2260,24 @@ $glowBorder.Add_MouseLeave({
     if (-not $script:isDragging -and -not $script:pinned) { $leaveTimer.Start() }
 })
 
-# Free Drag Anywhere on Island
+$expandedCard.Add_MouseEnter({
+    $leaveTimer.Stop()
+    if ($script:autoCollapseTimer) { $script:autoCollapseTimer.Stop() }
+    $script:mediaAutoShown = $false
+})
+
+# Free Drag Anywhere on Island (Safe: visual-tree checks ignore clicks on all interactive controls)
 $glowBorder.Add_MouseLeftButtonDown({
     param($sender, $e)
-    if ($e.OriginalSource -isnot [System.Windows.Controls.Button] -and
-        $e.OriginalSource -isnot [System.Windows.Controls.Slider] -and
-        $e.OriginalSource -isnot [System.Windows.Controls.Primitives.Thumb] -and
-        $e.OriginalSource -isnot [System.Windows.Controls.TextBox] -and
-        $e.OriginalSource -isnot [System.Windows.Controls.CheckBox]) {
-        $script:isDragging = $true
-        $window.DragMove()
-        $script:isDragging = $false
-        $Config.X = $window.Left
-        $Config.Y = $window.Top
-        Save-Config
+    if (Test-IsInteractiveControl $e.OriginalSource) {
+        return
     }
+    $script:isDragging = $true
+    $window.DragMove()
+    $script:isDragging = $false
+    $Config.X = $window.Left
+    $Config.Y = $window.Top
+    Save-Config
 })
 
 # Direct Hardware Master Volume Scroll (Works on Bluetooth Headsets)
@@ -2247,7 +2298,9 @@ $script:autoCollapseTimer.Interval = [TimeSpan]::FromMilliseconds($Config.MediaP
 $script:autoCollapseTimer.Add_Tick({
     $script:autoCollapseTimer.Stop()
     $script:mediaAutoShown = $false
-    if ($script:expanded -and -not $script:pinned) { Collapse-Island }
+    if ($script:expanded -and -not $script:pinned -and -not $glowBorder.IsMouseOver -and -not $window.IsMouseOver) {
+        Collapse-Island
+    }
 })
 
 # Modern Context Menu Wireup
