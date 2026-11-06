@@ -1,0 +1,16 @@
+# Operating System & Cache Files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Logs & Temporary Files
+*.log
+*.tmp
+*.bak
+
+# IDE & Editor Directories
+.vscode/
+.idea/
+*.swp
+*~
