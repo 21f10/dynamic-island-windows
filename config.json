@@ -1,4 +1,4 @@
-﻿{
+{
     "ExpandedHeight":  240,
     "ExpandedWidth":  460,
     "Tabs":  {
@@ -8,15 +8,15 @@
                  "Power":  true,
                  "Media":  true
              },
-    "GlowOpacity":  0.67,
-    "IslandWidth":  220,
+    "GlowOpacity":  0.9,
+    "IslandWidth":  255,
     "WindowWidth":  520,
     "CritColor":  "#FFFF1744",
     "CollapseDelay":  320,
     "AccentPurple":  "#FFA855F7",
     "CollapseMs":  200,
     "EnableVolumeScroll":  true,
-    "Y":  1.3333333333333333,
+    "Y":  0,
     "StatsModules":  {
                          "Gpu":  true,
                          "Cpu":  true,
@@ -32,12 +32,12 @@
     "ScreenTopMargin":  8,
     "BackgroundColor":  "#F50F0F14",
     "IslandHeight":  38,
-    "GlowRadius":  26,
+    "GlowRadius":  32,
     "WarnColor":  "#FFFF9100",
     "CardBorderColor":  "#25FFFFFF",
     "CornerRadius":  22,
     "EnableDynamicGlow":  true,
-    "X":  611.33333333333326,
+    "X":  632,
     "AccentGreen":  "#FF10B981",
     "EnableSMTC":  true,
     "TextColor":  "#FFFFFFFF"

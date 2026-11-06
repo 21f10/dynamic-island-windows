@@ -22,7 +22,7 @@ $Config = @{
     Y               = $null
 
     # --- Layout Geometry (px) ---
-    IslandWidth     = 220
+    IslandWidth     = 255
     IslandHeight    = 38
     ExpandedWidth   = 460
     ExpandedHeight  = 240
@@ -479,6 +479,84 @@ function Get-ArcPath ([double]$cx, [double]$cy, [double]$r, [double]$pct) {
         </Setter.Value>
       </Setter>
     </Style>
+
+    <!-- Modern Dark Glass Context Menu Style -->
+    <Style x:Key="ModernContextMenu" TargetType="ContextMenu">
+      <Setter Property="SnapsToDevicePixels" Value="True"/>
+      <Setter Property="OverridesDefaultStyle" Value="True"/>
+      <Setter Property="Grid.IsSharedSizeScope" Value="True"/>
+      <Setter Property="HasDropShadow" Value="True"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ContextMenu">
+            <Border Background="#161622"
+                    BorderBrush="#2C2C3E"
+                    BorderThickness="1"
+                    CornerRadius="14"
+                    Padding="6">
+              <Border.Effect>
+                <DropShadowEffect BlurRadius="24" ShadowDepth="4" Opacity="0.65" Color="#000000"/>
+              </Border.Effect>
+              <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle"/>
+            </Border>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- Modern Dark Glass Menu Item Style -->
+    <Style x:Key="ModernMenuItem" TargetType="MenuItem">
+      <Setter Property="SnapsToDevicePixels" Value="True"/>
+      <Setter Property="OverridesDefaultStyle" Value="True"/>
+      <Setter Property="Foreground" Value="#EEEEF4"/>
+      <Setter Property="FontFamily" Value="Segoe UI Variable Text, Segoe UI"/>
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="FontWeight" Value="Medium"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Height" Value="34"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="MenuItem">
+            <Border x:Name="ItemBorder"
+                    Background="Transparent"
+                    CornerRadius="8"
+                    Padding="10,6"
+                    Margin="0,1">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="24"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <ContentPresenter x:Name="IconHost" Grid.Column="0" Content="{TemplateBinding Icon}"
+                                  VerticalAlignment="Center" HorizontalAlignment="Left"/>
+                <ContentPresenter x:Name="HeaderHost" Grid.Column="1" Content="{TemplateBinding Header}"
+                                  VerticalAlignment="Center" Margin="8,0,10,0"/>
+              </Grid>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsHighlighted" Value="True">
+                <Setter TargetName="ItemBorder" Property="Background" Value="#252538"/>
+                <Setter Property="Foreground" Value="#FFFFFF"/>
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Foreground" Value="#66FFFFFF"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- Modern Separator Style -->
+    <Style TargetType="Separator">
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Separator">
+            <Border Height="1" Background="#242436" Margin="4,4"/>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
   </Window.Resources>
 
   <Grid HorizontalAlignment="Center" VerticalAlignment="Top">
@@ -489,6 +567,21 @@ function Get-ArcPath ([double]$cx, [double]$cy, [double]$r, [double]$pct) {
             Width="$($Config.IslandWidth)" Height="$($Config.IslandHeight)"
             Margin="0,$($Config.ScreenTopMargin),0,0"
             HorizontalAlignment="Center" VerticalAlignment="Top">
+      <Border.ContextMenu>
+        <ContextMenu Style="{StaticResource ModernContextMenu}">
+          <MenuItem x:Name="MenuResetPos" Header="Reset Position to Top Center" Style="{StaticResource ModernMenuItem}">
+            <MenuItem.Icon>
+              <TextBlock x:Name="MenuResetIcon" Text="&#xE895;" FontFamily="Segoe MDL2 Assets" FontSize="13" Foreground="$($Config.GlowColor)"/>
+            </MenuItem.Icon>
+          </MenuItem>
+          <Separator/>
+          <MenuItem x:Name="MenuQuit" Header="Quit Dynamic Island" Style="{StaticResource ModernMenuItem}">
+            <MenuItem.Icon>
+              <TextBlock Text="&#xE711;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="#FF5252"/>
+            </MenuItem.Icon>
+          </MenuItem>
+        </ContextMenu>
+      </Border.ContextMenu>
       <Border.Effect>
         <DropShadowEffect x:Name="GlowFx"
                           Color="$($Config.GlowColor)"
@@ -511,7 +604,7 @@ function Get-ArcPath ([double]$cx, [double]$cy, [double]$r, [double]$pct) {
           <!-- ============================================================= -->
           <!-- 1. COMPACT PILL VIEW (Default idle state)                      -->
           <!-- ============================================================= -->
-          <Grid x:Name="CompactBar" Height="$($Config.IslandHeight)" VerticalAlignment="Top" Margin="14,0">
+          <Grid x:Name="CompactBar" Height="$($Config.IslandHeight)" VerticalAlignment="Top" Margin="10,0">
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
               <!-- Mini Icon (Clock or Music glyph) -->
               <TextBlock x:Name="CompactIcon" Text="&#xE823;" FontFamily="Segoe MDL2 Assets"
@@ -1210,6 +1303,11 @@ $statusDot       = $window.FindName('StatusDot')
 $compactBar      = $window.FindName('CompactBar')
 $expandedCard    = $window.FindName('ExpandedCard')
 
+# Modern Context Menu Elements
+$menuResetPos    = $window.FindName('MenuResetPos')
+$menuResetIcon   = $window.FindName('MenuResetIcon')
+$menuQuit        = $window.FindName('MenuQuit')
+
 # Compact Elements
 $compactIcon     = $window.FindName('CompactIcon')
 $compactTime     = $window.FindName('CompactTime')
@@ -1339,6 +1437,9 @@ function Apply-AuraTheme ([string]$hexColor) {
     $glowFx.Color = $colorObj
     $statusDot.Fill = [System.Windows.Media.SolidColorBrush]::new($colorObj)
     $compactIcon.Foreground = [System.Windows.Media.SolidColorBrush]::new($colorObj)
+    if ($null -ne $menuResetIcon) {
+        $menuResetIcon.Foreground = [System.Windows.Media.SolidColorBrush]::new($colorObj)
+    }
 
     # Brushes with translucent alpha for rounded pill active state
     $alphaHex = $hexColor.Substring(1)
@@ -1837,30 +1938,20 @@ $script:autoCollapseTimer.Add_Tick({
     if ($script:expanded -and -not $script:pinned) { Collapse-Island }
 })
 
-# Context Menu
-$menu = New-Object System.Windows.Controls.ContextMenu
-$menu.Background  = $bc.ConvertFromString('#FF1A1A24')
-$menu.Foreground  = $script:brushWhite
-$menu.BorderBrush = $bc.ConvertFromString('#FF333344')
+# Modern Context Menu Wireup
+if ($null -ne $menuResetPos) {
+    $menuResetPos.Add_Click({
+        $window.Left = ([System.Windows.SystemParameters]::PrimaryScreenWidth - $window.Width) / 2
+        $window.Top  = 0
+        $Config.X = $window.Left
+        $Config.Y = $window.Top
+        Save-Config
+    })
+}
 
-$resetPos = New-Object System.Windows.Controls.MenuItem
-$resetPos.Header     = 'Reset Position to Top Center'
-$resetPos.Foreground = $script:brushWhite
-$resetPos.Add_Click({
-    $window.Left = ([System.Windows.SystemParameters]::PrimaryScreenWidth - $window.Width) / 2
-    $window.Top  = 0
-    $Config.X = $window.Left
-    $Config.Y = $window.Top
-    Save-Config
-})
-$menu.Items.Add($resetPos) | Out-Null
-
-$quitItem = New-Object System.Windows.Controls.MenuItem
-$quitItem.Header     = 'Quit Dynamic Island'
-$quitItem.Foreground = $script:brushWhite
-$quitItem.Add_Click({ $window.Close() })
-$menu.Items.Add($quitItem) | Out-Null
-$glowBorder.ContextMenu = $menu
+if ($null -ne $menuQuit) {
+    $menuQuit.Add_Click({ $window.Close() })
+}
 
 # Cleanup on Window Close
 $window.Add_Closed({
