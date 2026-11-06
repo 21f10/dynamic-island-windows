@@ -1,6 +1,6 @@
-{
-    "ExpandedHeight":  240,
-    "ExpandedWidth":  460,
+﻿{
+    "ExpandedHeight":  250,
+    "ExpandedWidth":  480,
     "Tabs":  {
                  "Stats":  true,
                  "Today":  true,
@@ -37,7 +37,7 @@
     "CardBorderColor":  "#25FFFFFF",
     "CornerRadius":  22,
     "EnableDynamicGlow":  true,
-    "X":  632,
+    "X":  593.33333333333326,
     "AccentGreen":  "#FF10B981",
     "EnableSMTC":  true,
     "TextColor":  "#FFFFFFFF"

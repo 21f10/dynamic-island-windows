@@ -1,6 +1,6 @@
 # ==============================================================================
-#  Dynamic Island for Windows  -  v3.5 (Performance & Customization Edition)
-#  Background Runspace Telemetry | 60 FPS Audio Wave | Pill Tab Styles | Inline Aura Settings
+#  Dynamic Island for Windows  -  v4.0 (Executive Edition)
+#  60 FPS Desktop HUD | WinRT Live Album Art | 8-Bar Dynamic EQ | Radial Gauges
 # ==============================================================================
 
 # Global Error Suppression (Zero Red Crash Windows)
@@ -24,29 +24,29 @@ $Config = @{
     # --- Layout Geometry (px) ---
     IslandWidth     = 255
     IslandHeight    = 38
-    ExpandedWidth   = 460
-    ExpandedHeight  = 240
+    ExpandedWidth   = 480
+    ExpandedHeight  = 250
     CornerRadius    = 22
     ScreenTopMargin = 8
-    WindowWidth     = 520
-    WindowHeight    = 300
+    WindowWidth     = 540
+    WindowHeight    = 320
 
     # --- Visual Customization & Aura ---
     GlowColor       = '#00E5FF'          # Active Glow / Aura color
-    GlowRadius      = 26                 # Outer glow blur radius
-    GlowOpacity     = 0.55               # Outer glow opacity
+    GlowRadius      = 28                 # Outer glow blur radius
+    GlowOpacity     = 0.65               # Outer glow opacity
     BackgroundColor = '#F50F0F14'        # Frosted obsidian background
     CardColor       = '#14141E'          # Modular card fill
     CardBorderColor = '#25FFFFFF'        # Glass border
     TextColor       = '#FFFFFFFF'        # Primary text
     SubtextColor    = '#FFA0A0B2'        # Subdued gray text
     AccentPurple    = '#FFA855F7'        # GPU accent
-    AccentGreen     = '#FF10B981'        # RAM & Battery accent
-    WarnColor       = '#FFFF9100'        # Load > 78% glow
-    CritColor       = '#FFFF1744'        # Load > 92% glow
+    AccentGreen     = '#FF00E676'        # Emerald accent
+    WarnColor       = '#FFFFB300'        # Amber warning (>75%)
+    CritColor       = '#FFFF1744'        # Crimson critical (>88% or batt <20%)
 
     # --- Animation Timing ---
-    ExpandMs        = 240
+    ExpandMs        = 220
     CollapseMs      = 200
     CollapseDelay   = 320
     MediaPopupMs    = 4000
@@ -100,35 +100,110 @@ if (Test-Path $ConfigPath) {
 
 function Save-Config {
     try {
-        $Config | ConvertTo-Json -Depth 4 | Set-Content $ConfigPath -Encoding UTF8 -Force
+        $Config | ConvertTo-Json -Depth 4 | Set-Content -Path $ConfigPath -Encoding UTF8 -Force
     } catch { }
 }
 
 # ------------------------------------------------------------------------------
-#  S2  NATIVE INTEROP (Thread-Safe AudioMaster & Memory APIs)
+#  S2  NATIVE INTEROP (AudioMaster & Memory Telemetry)
 # ------------------------------------------------------------------------------
-Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Windows.Forms
-
-Add-Type @"
+Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
 
-public class IslandNative {
-    [DllImport("user32.dll")]
-    public static extern bool SetProcessDPIAware();
-    [DllImport("user32.dll")]
-    public static extern int GetWindowLong(IntPtr h, int i);
-    [DllImport("user32.dll")]
-    public static extern int SetWindowLong(IntPtr h, int i, int v);
-    [DllImport("user32.dll")]
-    public static extern bool LockWorkStation();
-    [DllImport("PowrProf.dll", CharSet = CharSet.Auto, ExactSpelling = true)]
-    public static extern bool SetSuspendState(bool hiberate, bool forceCritical, bool disableWakeEvent);
+public static class AudioMasterSafe {
+    [ComImport]
+    [Guid("A95664D2-9614-4F35-A746-DE8DB63617E6")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IMMDeviceEnumerator {
+        int NotImpl1();
+        [PreserveSig]
+        int GetDefaultAudioEndpoint(int dataFlow, int role, out IMMDevice ppDevice);
+    }
+
+    [ComImport]
+    [Guid("D666063F-1587-4E43-81F1-B948E807363F")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IMMDevice {
+        [PreserveSig]
+        int Activate(ref Guid iid, int dwClsCtx, IntPtr pActivationParams, [MarshalAs(UnmanagedType.IUnknown)] out object ppInterface);
+    }
+
+    [ComImport]
+    [Guid("5CDF2C82-841E-4546-9722-0CF74078229A")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IAudioEndpointVolume {
+        int NotImpl1();
+        int NotImpl2();
+        [PreserveSig]
+        int GetMasterVolumeLevelScalar(out float pfLevel);
+        [PreserveSig]
+        int SetMasterVolumeLevelScalar(float fLevel, System.Guid pguidEventContext);
+        [PreserveSig]
+        int SetMute([MarshalAs(UnmanagedType.Bool)] bool bMute, System.Guid pguidEventContext);
+        [PreserveSig]
+        int GetMute([MarshalAs(UnmanagedType.Bool)] out bool pbMute);
+    }
+
+    [ComImport]
+    [Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
+    private class MMDeviceEnumeratorComObject { }
+
+    private static IAudioEndpointVolume GetVolumeControl() {
+        try {
+            var enumerator = (IMMDeviceEnumerator)(new MMDeviceEnumeratorComObject());
+            IMMDevice dev = null;
+            if (enumerator.GetDefaultAudioEndpoint(0, 1, out dev) != 0 || dev == null) return null;
+            var iid = typeof(IAudioEndpointVolume).GUID;
+            object o;
+            if (dev.Activate(ref iid, 23, IntPtr.Zero, out o) != 0 || o == null) return null;
+            return (IAudioEndpointVolume)o;
+        } catch { return null; }
+    }
+
+    public static float GetVolume() {
+        try {
+            var vol = GetVolumeControl();
+            if (vol == null) return 50.0f;
+            float level;
+            vol.GetMasterVolumeLevelScalar(out level);
+            return level * 100.0f;
+        } catch { return 50.0f; }
+    }
+
+    public static void SetVolume(float levelPercent) {
+        try {
+            var vol = GetVolumeControl();
+            if (vol == null) return;
+            float scalar = Math.Max(0.0f, Math.Min(1.0f, levelPercent / 100.0f));
+            vol.SetMasterVolumeLevelScalar(scalar, System.Guid.Empty);
+        } catch { }
+    }
+
+    public static bool GetMute() {
+        try {
+            var vol = GetVolumeControl();
+            if (vol == null) return false;
+            bool mute;
+            vol.GetMute(out mute);
+            return mute;
+        } catch { return false; }
+    }
+
+    public static void ToggleMute() {
+        try {
+            var vol = GetVolumeControl();
+            if (vol == null) return;
+            bool mute;
+            vol.GetMute(out mute);
+            vol.SetMute(!mute, System.Guid.Empty);
+        } catch { }
+    }
 }
 
-public class SysMem {
+public static class SysMem {
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
-    public class MEMORYSTATUSEX {
+    private class MEMORYSTATUSEX {
         public uint dwLength;
         public uint dwMemoryLoad;
         public ulong ullTotalPhys;
@@ -140,105 +215,48 @@ public class SysMem {
         public ulong ullAvailExtendedVirtual;
         public MEMORYSTATUSEX() { this.dwLength = (uint)Marshal.SizeOf(typeof(MEMORYSTATUSEX)); }
     }
-    [return: MarshalAs(UnmanagedType.Bool)]
+
     [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
-    public static extern bool GlobalMemoryStatusEx([In, Out] MEMORYSTATUSEX lpBuffer);
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GlobalMemoryStatusEx([In, Out] MEMORYSTATUSEX lpBuffer);
 
     public static uint GetMemoryLoad() {
         try {
-            MEMORYSTATUSEX mem = new MEMORYSTATUSEX();
-            if (GlobalMemoryStatusEx(mem)) return mem.dwMemoryLoad;
-        } catch { }
-        return 0;
-    }
-    public static ulong GetTotalPhysicalGB() {
-        try {
-            MEMORYSTATUSEX mem = new MEMORYSTATUSEX();
-            if (GlobalMemoryStatusEx(mem)) return (mem.ullTotalPhys / (1024 * 1024 * 1024));
-        } catch { }
-        return 16;
+            var stat = new MEMORYSTATUSEX();
+            if (GlobalMemoryStatusEx(stat)) return stat.dwMemoryLoad;
+            return 0;
+        } catch { return 0; }
     }
 }
+'@
 
-// Crash-proof COM Audio Interfaces with [PreserveSig]
-[Guid("5CDF2C82-841E-4546-9722-0CF74078229A"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-public interface IAudioEndpointVolumeSafe {
-    [PreserveSig] int RegisterControlChangeNotify(IntPtr pNotify);
-    [PreserveSig] int UnregisterControlChangeNotify(IntPtr pNotify);
-    [PreserveSig] int GetChannelCount(out uint pnChannelCount);
-    [PreserveSig] int SetMasterVolumeLevel(float fLevelDB, ref Guid pguidEventContext);
-    [PreserveSig] int SetMasterVolumeLevelScalar(float fLevel, ref Guid pguidEventContext);
-    [PreserveSig] int GetMasterVolumeLevel(out float pfLevelDB);
-    [PreserveSig] int GetMasterVolumeLevelScalar(out float pfLevel);
-    [PreserveSig] int SetMute([MarshalAs(UnmanagedType.Bool)] bool bMute, ref Guid pguidEventContext);
-    [PreserveSig] int GetMute([MarshalAs(UnmanagedType.Bool)] out bool pbMute);
+# Circular Arc Path Generator for Radial Ring Gauges
+function Get-ArcPath ([double]$cx, [double]$cy, [double]$r, [double]$pct) {
+    $p = [math]::Min([math]::Max($pct, 0.5), 99.9)
+    $angle = ($p / 100.0) * 360.0
+    $rad = ($angle * [math]::PI) / 180.0
+    $startX = $cx
+    $startY = $cy - $r
+    $endX = $cx + ($r * [math]::Sin($rad))
+    $endY = $cy - ($r * [math]::Cos($rad))
+    $isLarge = if ($angle -gt 180) { 1 } else { 0 }
+    return "M $startX,$startY A $r,$r 0 $isLarge,1 $endX,$endY"
 }
-
-[Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-public interface IMMDeviceSafe {
-    [PreserveSig] int Activate(ref Guid id, int clsCtx, IntPtr activationParams, [MarshalAs(UnmanagedType.IUnknown)] out object interfacePointer);
-}
-
-[Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-public interface IMMDeviceEnumeratorSafe {
-    [PreserveSig] int EnumAudioEndpoints(int dataFlow, int stateMask, out IntPtr device);
-    [PreserveSig] int GetDefaultAudioEndpoint(int dataFlow, int role, out IMMDeviceSafe endpoint);
-}
-
-[ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
-public class MMDeviceEnumeratorComObjectSafe { }
-
-public class AudioMasterSafe {
-    public static float GetVolume() {
-        try {
-            var enumerator = (IMMDeviceEnumeratorSafe)(new MMDeviceEnumeratorComObjectSafe());
-            if (enumerator == null) return 50f;
-            IMMDeviceSafe dev = null;
-            int hr = enumerator.GetDefaultAudioEndpoint(0, 1, out dev);
-            if (hr != 0 || dev == null) return 50f;
-            Guid IID_IAudioEndpointVolume = typeof(IAudioEndpointVolumeSafe).GUID;
-            object epv = null;
-            hr = dev.Activate(ref IID_IAudioEndpointVolume, 23, IntPtr.Zero, out epv);
-            if (hr != 0 || epv == null) return 50f;
-            var vol = (IAudioEndpointVolumeSafe)epv;
-            float currentVol = 0.5f;
-            vol.GetMasterVolumeLevelScalar(out currentVol);
-            return currentVol * 100f;
-        } catch { return 50f; }
-    }
-    public static void SetVolume(float levelPercent) {
-        try {
-            levelPercent = Math.Max(0f, Math.Min(100f, levelPercent));
-            var enumerator = (IMMDeviceEnumeratorSafe)(new MMDeviceEnumeratorComObjectSafe());
-            if (enumerator == null) return;
-            IMMDeviceSafe dev = null;
-            int hr = enumerator.GetDefaultAudioEndpoint(0, 1, out dev);
-            if (hr != 0 || dev == null) return;
-            Guid IID_IAudioEndpointVolume = typeof(IAudioEndpointVolumeSafe).GUID;
-            object epv = null;
-            hr = dev.Activate(ref IID_IAudioEndpointVolume, 23, IntPtr.Zero, out epv);
-            if (hr != 0 || epv == null) return;
-            var vol = (IAudioEndpointVolumeSafe)epv;
-            Guid g = Guid.Empty;
-            vol.SetMasterVolumeLevelScalar(levelPercent / 100f, ref g);
-        } catch { }
-    }
-}
-"@
-[IslandNative]::SetProcessDPIAware() | Out-Null
 
 # ------------------------------------------------------------------------------
-#  S3  BACKGROUND TELEMETRY RUNSPACE (Offloads heavy WMI & Counters)
+#  S3  BACKGROUND TELEMETRY & WINRT STREAM RUNSPACE (UI Isolation)
 # ------------------------------------------------------------------------------
 $script:sharedState = [hashtable]::Synchronized(@{
-    Cpu         = 0
-    Gpu         = 0
-    Ram         = 0
-    MediaTitle  = ''
-    MediaArtist = ''
-    MediaStatus = 'None'
-    Volume      = 50
-    IsRunning   = $true
+    Cpu            = 0
+    Gpu            = 0
+    Ram            = 0
+    MediaTitle     = ''
+    MediaArtist    = ''
+    MediaStatus    = 'None'
+    AlbumArtBytes  = $null
+    LastThumbTitle = ''
+    Volume         = 50
+    IsRunning      = $true
 })
 
 $script:bgRunspace = [PowerShell]::Create()
@@ -257,6 +275,8 @@ $null = $script:bgRunspace.AddScript({
         [void][Windows.Media.Control.GlobalSystemMediaTransportControlsSession, Windows.Media.Control, ContentType=WindowsRuntime]
         [void][Windows.Media.Control.GlobalSystemMediaTransportControlsSessionMediaProperties, Windows.Media.Control, ContentType=WindowsRuntime]
         [void][Windows.Media.Control.GlobalSystemMediaTransportControlsSessionPlaybackStatus, Windows.Media.Control, ContentType=WindowsRuntime]
+        [void][Windows.Storage.Streams.IRandomAccessStreamWithContentType, Windows.Storage.Streams, ContentType=WindowsRuntime]
+        [void][Windows.Storage.Streams.DataReader, Windows.Storage.Streams, ContentType=WindowsRuntime]
 
         $asTaskGeneric = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {
             $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and
@@ -267,9 +287,10 @@ $null = $script:bgRunspace.AddScript({
         $asTaskMgr = $asTaskGeneric.MakeGenericMethod($mgrType)
         $asyncOp = $mgrType::RequestAsync()
         $task = $asTaskMgr.Invoke($null, @($asyncOp))
-        $task.Wait(3000) | Out-Null
-        $sessionMgr = $task.Result
-        $smtcReady = ($null -ne $sessionMgr)
+        if ($task.Wait(2500)) {
+            $sessionMgr = $task.Result
+            $smtcReady = ($null -ne $sessionMgr)
+        }
     } catch { $smtcReady = $false }
 
     while ($state.IsRunning) {
@@ -309,7 +330,8 @@ $null = $script:bgRunspace.AddScript({
             $state.Ram = [int][SysMem]::GetMemoryLoad()
         } catch { }
 
-        # 4. SMTC Media Session
+        # 4. WinRT SMTC Media Session & Live Album Art
+        $sessionHandled = $false
         if ($smtcReady -and $null -ne $sessionMgr) {
             try {
                 $session = $sessionMgr.GetCurrentSession()
@@ -322,34 +344,84 @@ $null = $script:bgRunspace.AddScript({
                     $asTaskP = $asTaskGeneric.MakeGenericMethod($propsType)
                     $asyncP = $session.TryGetMediaPropertiesAsync()
                     $taskP = $asTaskP.Invoke($null, @($asyncP))
-                    $taskP.Wait(1500) | Out-Null
-                    $props = $taskP.Result
-                    if ($null -ne $props) {
-                        $state.MediaTitle = if ($props.Title) { $props.Title } else { '' }
-                        $state.MediaArtist = if ($props.Artist) { $props.Artist } else { '' }
+                    if ($taskP.Wait(1200)) {
+                        $props = $taskP.Result
+                        if ($null -ne $props) {
+                            $newTitle = if ($props.Title) { $props.Title } else { '' }
+                            $newArtist = if ($props.Artist) { $props.Artist } else { '' }
+                            $state.MediaTitle  = $newTitle
+                            $state.MediaArtist = $newArtist
+                            $sessionHandled = $true
+
+                            # Live Album Art Extraction
+                            if ($props.Thumbnail -and ($newTitle -ne $state.LastThumbTitle)) {
+                                $state.LastThumbTitle = $newTitle
+                                try {
+                                    $asTaskStream = $asTaskGeneric.MakeGenericMethod([Windows.Storage.Streams.IRandomAccessStreamWithContentType])
+                                    $streamTask = $asTaskStream.Invoke($null, @($props.Thumbnail.OpenReadAsync()))
+                                    if ($streamTask.Wait(1200)) {
+                                        $stream = $streamTask.Result
+                                        if ($null -ne $stream -and $stream.Size -gt 0) {
+                                            $dr = [Windows.Storage.Streams.DataReader]::new($stream)
+                                            $asTaskLoad = $asTaskGeneric.MakeGenericMethod([uint32])
+                                            $loadTask = $asTaskLoad.Invoke($null, @($dr.LoadAsync([uint32]$stream.Size)))
+                                            if ($loadTask.Wait(1200)) {
+                                                $rawBytes = New-Object byte[] ([int]$stream.Size)
+                                                $dr.ReadBytes($rawBytes)
+                                                $state.AlbumArtBytes = $rawBytes
+                                            }
+                                            $dr.Dispose()
+                                            $stream.Dispose()
+                                        } else {
+                                            $state.AlbumArtBytes = $null
+                                        }
+                                    }
+                                } catch {
+                                    $state.AlbumArtBytes = $null
+                                }
+                            } elseif (-not $props.Thumbnail) {
+                                $state.AlbumArtBytes = $null
+                                $state.LastThumbTitle = ''
+                            }
+                        }
                     }
-                } else {
-                    $state.MediaStatus = 'None'
-                    $state.MediaTitle = ''
-                    $state.MediaArtist = ''
                 }
-            } catch {
-                $state.MediaStatus = 'None'
-            }
+            } catch { }
         }
 
-        # Background Interval (1.2s sleep in small slices)
-        for ($i = 0; $i -lt 12; $i++) {
-            if (-not $state.IsRunning) { break }
-            [System.Threading.Thread]::Sleep(100)
+        # Fallback Window Title Scraping (Spotify, Chrome, Edge, Firefox)
+        if (-not $sessionHandled) {
+            try {
+                $procs = Get-Process -Name spotify, msedge, chrome, firefox, brave, opera -ErrorAction SilentlyContinue |
+                         Where-Object { $_.MainWindowTitle -match ' - | · | • ' -or $_.MainWindowTitle.Length -gt 3 }
+                if ($procs) {
+                    $winTitle = $procs[0].MainWindowTitle
+                    if ($winTitle -match '^(.+?)\s*[-·•]\s*(.+)$') {
+                        $state.MediaArtist = $matches[1].Trim()
+                        $state.MediaTitle  = $matches[2].Trim()
+                    } else {
+                        $state.MediaTitle  = $winTitle
+                        $state.MediaArtist = $procs[0].ProcessName
+                    }
+                    $state.MediaStatus   = 'Playing'
+                    $state.AlbumArtBytes = $null
+                } else {
+                    $state.MediaStatus   = 'None'
+                    $state.MediaTitle    = ''
+                    $state.MediaArtist   = ''
+                    $state.AlbumArtBytes = $null
+                }
+            } catch { }
         }
+
+        Start-Sleep -Milliseconds 400
     }
-}).AddArgument($script:sharedState)
-
+})
+$null = $script:bgRunspace.AddArgument($script:sharedState)
 $script:bgHandle = $script:bgRunspace.BeginInvoke()
 
-# Helper: SMTC Media Commands executed asynchronously
-function Send-MediaCommand ([string]$Cmd) {
+# Helper for asynchronous media control actions
+function Send-MediaCommandAsync ([string]$Cmd) {
     [System.Threading.ThreadPool]::QueueUserWorkItem({
         try {
             Add-Type -AssemblyName System.Runtime.WindowsRuntime
@@ -360,39 +432,25 @@ function Send-MediaCommand ([string]$Cmd) {
             })[0]
             $mgrType = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager]
             $mgrTask = $asTask.MakeGenericMethod($mgrType).Invoke($null, @($mgrType::RequestAsync()))
-            $mgrTask.Wait(2000) | Out-Null
-            $sess = $mgrTask.Result.GetCurrentSession()
-            if ($null -ne $sess) {
-                switch ($Cmd) {
-                    'PlayPause' {
-                        $pb = $sess.GetPlaybackInfo()
-                        if ($pb.PlaybackStatus.ToString() -eq 'Playing') { $sess.TryPauseAsync() | Out-Null }
-                        else { $sess.TryPlayAsync() | Out-Null }
+            if ($mgrTask.Wait(1500)) {
+                $sess = $mgrTask.Result.GetCurrentSession()
+                if ($null -ne $sess) {
+                    switch ($Cmd) {
+                        'PlayPause' { [void]$sess.TryTogglePlayPauseAsync() }
+                        'Previous'  { [void]$sess.TrySkipPreviousAsync() }
+                        'Next'      { [void]$sess.TrySkipNextAsync() }
                     }
-                    'Next'     { $sess.TrySkipNextAsync() | Out-Null }
-                    'Previous' { $sess.TrySkipPreviousAsync() | Out-Null }
                 }
             }
         } catch { }
-    }) | Out-Null
-}
-
-# SVG Arc Path calculation for Circular Rings
-function Get-ArcPath ([double]$cx, [double]$cy, [double]$r, [double]$pct) {
-    $p = [math]::Min([math]::Max($pct, 0.5), 99.9)
-    $angle = ($p / 100.0) * 360.0
-    $rad = ($angle * [math]::PI) / 180.0
-    $startX = $cx
-    $startY = $cy - $r
-    $endX = $cx + ($r * [math]::Sin($rad))
-    $endY = $cy - ($r * [math]::Cos($rad))
-    $isLarge = if ($angle -gt 180) { 1 } else { 0 }
-    return "M $startX,$startY A $r,$r 0 $isLarge,1 $endX,$endY"
+    })
 }
 
 # ------------------------------------------------------------------------------
-#  S4  WPF XAML INTERFACE (Cylindrical Pill Tabs & Inline Customization)
+#  S4  WPF XAML INTERFACE (Glassmorphism & Executive Styling)
 # ------------------------------------------------------------------------------
+Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
+
 [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -400,6 +458,7 @@ function Get-ArcPath ([double]$cx, [double]$cy, [double]$r, [double]$pct) {
         Topmost="True" ShowInTaskbar="False" ShowActivated="False"
         ResizeMode="NoResize"
         RenderOptions.BitmapScalingMode="HighQuality"
+        RenderOptions.EdgeMode="Aliased"
         TextOptions.TextRenderingMode="ClearType"
         TextOptions.TextFormattingMode="Display"
         Width="$($Config.WindowWidth)" Height="$($Config.WindowHeight)">
@@ -423,14 +482,14 @@ function Get-ArcPath ([double]$cx, [double]$cy, [double]$r, [double]$pct) {
                     Background="{TemplateBinding Background}"
                     BorderBrush="{TemplateBinding BorderBrush}"
                     BorderThickness="{TemplateBinding BorderThickness}"
-                    CornerRadius="14"
-                    Padding="10,4">
+                    CornerRadius="16"
+                    Padding="12,4">
               <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="TabBorder" Property="Background" Value="#22FFFFFF"/>
-                <Setter Property="Foreground" Value="#FFFFFFFF"/>
+                <Setter TargetName="TabBorder" Property="Background" Value="#26FFFFFF"/>
+                <Setter Property="Foreground" Value="$($Config.GlowColor)"/>
               </Trigger>
               <Trigger Property="IsPressed" Value="True">
                 <Setter TargetName="TabBorder" Property="Background" Value="#33FFFFFF"/>
@@ -441,40 +500,85 @@ function Get-ArcPath ([double]$cx, [double]$cy, [double]$r, [double]$pct) {
       </Setter>
     </Style>
 
-    <!-- Color Swatch Button Style -->
-    <Style x:Key="SwatchButtonStyle" TargetType="Button">
+    <!-- iOS / Win11 Toggle Switch Style -->
+    <Style x:Key="Win11ToggleSwitch" TargetType="CheckBox">
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Focusable" Value="False"/>
+      <Setter Property="Foreground" Value="#EEEEF4"/>
       <Setter Property="FontFamily" Value="Segoe UI Variable Text, Segoe UI"/>
-      <Setter Property="FontSize" Value="10"/>
-      <Setter Property="FontWeight" Value="Bold"/>
-      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
       <Setter Property="Template">
         <Setter.Value>
-          <ControlTemplate TargetType="Button">
-            <Border Background="{TemplateBinding Background}" CornerRadius="12">
-              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-            </Border>
+          <ControlTemplate TargetType="CheckBox">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+              <Border x:Name="Track" Width="36" Height="18" CornerRadius="9" Background="#262638" BorderBrush="#33FFFFFF" BorderThickness="1">
+                <Ellipse x:Name="Thumb" Width="12" Height="12" Fill="#FFFFFF" HorizontalAlignment="Left" Margin="2,0,0,0">
+                  <Ellipse.Effect>
+                    <DropShadowEffect BlurRadius="4" ShadowDepth="1" Opacity="0.3" Color="#000000"/>
+                  </Ellipse.Effect>
+                </Ellipse>
+              </Border>
+              <ContentPresenter Content="{TemplateBinding Content}" Margin="8,0,0,0" VerticalAlignment="Center"/>
+            </StackPanel>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="Track" Property="Background" Value="$($Config.GlowColor)"/>
+                <Setter TargetName="Track" Property="BorderBrush" Value="$($Config.GlowColor)"/>
+                <Setter TargetName="Thumb" Property="Margin" Value="20,0,0,0"/>
+                <Setter TargetName="Thumb" Property="Fill" Value="#0F0F14"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
           </ControlTemplate>
         </Setter.Value>
       </Setter>
     </Style>
 
-    <!-- Module Toggle Pill Style -->
-    <Style x:Key="ToggleModuleButtonStyle" TargetType="Button">
-      <Setter Property="Background" Value="#1C1C28"/>
-      <Setter Property="Foreground" Value="#FFFFFFFF"/>
-      <Setter Property="BorderBrush" Value="#33FFFFFF"/>
-      <Setter Property="BorderThickness" Value="1"/>
-      <Setter Property="FontFamily" Value="Segoe UI Variable Text, Segoe UI"/>
-      <Setter Property="FontSize" Value="10"/>
-      <Setter Property="FontWeight" Value="SemiBold"/>
+    <!-- Modern Glow Slider Style -->
+    <Style x:Key="ModernGlowSlider" TargetType="Slider">
+      <Setter Property="Stylus.IsPressAndHoldEnabled" Value="False"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="Foreground" Value="$($Config.GlowColor)"/>
       <Setter Property="Cursor" Value="Hand"/>
       <Setter Property="Focusable" Value="False"/>
       <Setter Property="Template">
         <Setter.Value>
-          <ControlTemplate TargetType="Button">
-            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="12">
-              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-            </Border>
+          <ControlTemplate TargetType="Slider">
+            <Grid VerticalAlignment="Center">
+              <Track x:Name="PART_Track">
+                <Track.DecreaseRepeatButton>
+                  <RepeatButton Command="{x:Static Slider.DecreaseLarge}">
+                    <RepeatButton.Template>
+                      <ControlTemplate TargetType="RepeatButton">
+                        <Border Background="{TemplateBinding Foreground}" Height="4" CornerRadius="2"/>
+                      </ControlTemplate>
+                    </RepeatButton.Template>
+                  </RepeatButton>
+                </Track.DecreaseRepeatButton>
+                <Track.Thumb>
+                  <Thumb>
+                    <Thumb.Template>
+                      <ControlTemplate TargetType="Thumb">
+                        <Border Width="12" Height="12" CornerRadius="6" Background="#FFFFFF" BorderBrush="{TemplateBinding Foreground}" BorderThickness="2">
+                          <Border.Effect>
+                            <DropShadowEffect BlurRadius="6" ShadowDepth="0" Color="$($Config.GlowColor)" Opacity="0.8"/>
+                          </Border.Effect>
+                        </Border>
+                      </ControlTemplate>
+                    </Thumb.Template>
+                  </Thumb>
+                </Track.Thumb>
+                <Track.IncreaseRepeatButton>
+                  <RepeatButton Command="{x:Static Slider.IncreaseLarge}">
+                    <RepeatButton.Template>
+                      <ControlTemplate TargetType="RepeatButton">
+                        <Border Background="#262638" Height="4" CornerRadius="2"/>
+                      </ControlTemplate>
+                    </RepeatButton.Template>
+                  </RepeatButton>
+                </Track.IncreaseRepeatButton>
+              </Track>
+            </Grid>
           </ControlTemplate>
         </Setter.Value>
       </Setter>
@@ -642,7 +746,7 @@ function Get-ArcPath ([double]$cx, [double]$cy, [double]$r, [double]$pct) {
           </Grid>
 
           <!-- ============================================================= -->
-          <!-- 2. EXPANDED DASHBOARD VIEW (Hitodama UI)                      -->
+          <!-- 2. EXPANDED DASHBOARD VIEW (Hitodama Executive UI)           -->
           <!-- ============================================================= -->
           <Grid x:Name="ExpandedCard" Opacity="0" Visibility="Collapsed" Margin="14,10,14,12">
             <Grid.RowDefinitions>
@@ -652,7 +756,7 @@ function Get-ArcPath ([double]$cx, [double]$cy, [double]$r, [double]$pct) {
               <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
-            <!-- TAB NAVIGATION BAR -->
+            <!-- Navigation Bar Header -->
             <Grid Grid.Row="0" Margin="0,0,0,10">
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
@@ -660,24 +764,22 @@ function Get-ArcPath ([double]$cx, [double]$cy, [double]$r, [double]$pct) {
                 <ColumnDefinition Width="Auto"/>
               </Grid.ColumnDefinitions>
 
-              <!-- Left Status Dot -->
-              <Ellipse x:Name="StatusDot" Grid.Column="0" Width="8" Height="8" Fill="$($Config.GlowColor)"
-                       VerticalAlignment="Center" Margin="4,0,8,0">
-                <Ellipse.Effect>
-                  <DropShadowEffect Color="$($Config.GlowColor)" BlurRadius="8" ShadowDepth="0" Opacity="0.8"/>
-                </Ellipse.Effect>
-              </Ellipse>
+              <!-- Left Status Dot Indicator -->
+              <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                <Ellipse x:Name="StatusDot" Width="7" Height="7" Fill="$($Config.GlowColor)" Margin="2,0,8,0"/>
+                <TextBlock Text="ISLAND" Foreground="#55FFFFFF"
+                           FontFamily="Segoe UI Variable Display, Segoe UI"
+                           FontSize="10" FontWeight="Bold" VerticalAlignment="Center"/>
+              </StackPanel>
 
-              <!-- Center Segmented Pill Tab Bar -->
-              <Border Grid.Column="1" Background="#161620" CornerRadius="16" Padding="3" HorizontalAlignment="Center">
-                <StackPanel Orientation="Horizontal">
-                  <Button x:Name="TabBtnToday" Content="Today" Width="68" Style="{StaticResource TabPillButtonStyle}"/>
-                  <Button x:Name="TabBtnMedia" Content="Media" Width="68" Style="{StaticResource TabPillButtonStyle}"/>
-                  <Button x:Name="TabBtnStats" Content="Stats" Width="68" Style="{StaticResource TabPillButtonStyle}"/>
-                  <Button x:Name="TabBtnControls" Content="Controls" Width="68" Style="{StaticResource TabPillButtonStyle}"/>
-                  <Button x:Name="TabBtnPower" Content="Power" Width="64" Style="{StaticResource TabPillButtonStyle}"/>
-                </StackPanel>
-              </Border>
+              <!-- Center Rounded Pill Tabs -->
+              <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center">
+                <Button x:Name="TabBtnToday" Content="Today" Style="{StaticResource TabPillButtonStyle}"/>
+                <Button x:Name="TabBtnMedia" Content="Media" Style="{StaticResource TabPillButtonStyle}"/>
+                <Button x:Name="TabBtnStats" Content="Stats" Style="{StaticResource TabPillButtonStyle}"/>
+                <Button x:Name="TabBtnControls" Content="Controls" Style="{StaticResource TabPillButtonStyle}"/>
+                <Button x:Name="TabBtnPower" Content="Power" Style="{StaticResource TabPillButtonStyle}"/>
+              </StackPanel>
 
               <!-- Right Actions: Settings Gear & Pin Toggle -->
               <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
@@ -695,16 +797,16 @@ function Get-ArcPath ([double]$cx, [double]$cy, [double]$r, [double]$pct) {
             </Grid>
 
             <!-- =========================================================== -->
-            <!-- TAB 1: TODAY VIEW                                           -->
+            <!-- TAB 1: TODAY VIEW (Smart Dashboard & Radial Battery)        -->
             <!-- =========================================================== -->
             <Grid x:Name="ViewToday" Grid.Row="1" Visibility="Visible">
               <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="1.2*"/>
-                <ColumnDefinition Width="1.4*"/>
+                <ColumnDefinition Width="1.1*"/>
+                <ColumnDefinition Width="1.3*"/>
               </Grid.ColumnDefinitions>
 
-              <!-- Left: Big Clock & Date Card -->
-              <Border Grid.Column="0" Background="#14141E" CornerRadius="16" BorderBrush="#1FFFFFFF" BorderThickness="1" Margin="0,0,6,0" Padding="12,14">
+              <!-- Left: Big Clock, Date & Smart Greeting Card -->
+              <Border Grid.Column="0" Background="#14141E" CornerRadius="16" BorderBrush="#1FFFFFFF" BorderThickness="1" Margin="0,0,6,0" Padding="12,12">
                 <StackPanel VerticalAlignment="Center">
                   <TextBlock x:Name="TodayClockText" Text="12:00 PM"
                              Foreground="$($Config.TextColor)"
@@ -714,77 +816,96 @@ function Get-ArcPath ([double]$cx, [double]$cy, [double]$r, [double]$pct) {
                   <TextBlock x:Name="TodayDateText" Text="Friday, 6 November"
                              Foreground="$($Config.SubtextColor)"
                              FontFamily="Segoe UI Variable Text, Segoe UI"
-                             FontSize="12" HorizontalAlignment="Center" Margin="0,4,0,0"/>
-                  <!-- Greeting Pill -->
-                  <Border Background="#1AFFFFFF" CornerRadius="10" HorizontalAlignment="Center" Margin="0,10,0,0" Padding="10,3">
-                    <TextBlock x:Name="TodayGreeting" Text="Good Evening" Foreground="$($Config.GlowColor)"
-                               FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="11" FontWeight="SemiBold"/>
+                             FontSize="12" HorizontalAlignment="Center" Margin="0,3,0,0"/>
+
+                  <!-- Smart Greeting Pill with Weather / Sun / Moon Icon -->
+                  <Border Background="#1AFFFFFF" CornerRadius="12" HorizontalAlignment="Center" Margin="0,8,0,0" Padding="10,4">
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                      <TextBlock x:Name="TodayGreetingIcon" Text="&#xE708;" FontFamily="Segoe MDL2 Assets"
+                                 FontSize="12" Foreground="$($Config.GlowColor)" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                      <TextBlock x:Name="TodayGreeting" Text="Good Evening" Foreground="$($Config.GlowColor)"
+                                 FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    </StackPanel>
                   </Border>
                 </StackPanel>
               </Border>
 
-              <!-- Right: Battery & Quick Metrics Card -->
-              <Border Grid.Column="1" Background="#14141E" CornerRadius="16" BorderBrush="#1FFFFFFF" BorderThickness="1" Margin="6,0,0,0" Padding="14,12">
-                <StackPanel VerticalAlignment="Center">
-                  <!-- Battery Header -->
-                  <Grid Margin="0,0,0,8">
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                      <TextBlock x:Name="TodayBattIcon" Text="&#xEA93;" FontFamily="Segoe MDL2 Assets"
-                                 FontSize="14" Foreground="$($Config.AccentGreen)" Margin="0,0,6,0"/>
-                      <TextBlock Text="Battery Status" Foreground="$($Config.SubtextColor)"
-                                 FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="12" FontWeight="SemiBold"/>
+              <!-- Right: Battery Radial Ring Gauge & System Micro Cards -->
+              <Border Grid.Column="1" Background="#14141E" CornerRadius="16" BorderBrush="#1FFFFFFF" BorderThickness="1" Margin="6,0,0,0" Padding="12,10">
+                <Grid>
+                  <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                  </Grid.RowDefinitions>
+
+                  <!-- Top: Circular Radial Ring Gauge for Battery -->
+                  <Grid Grid.Row="0" Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="70"/>
+                      <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Circular Arc Battery Gauge (70x70) -->
+                    <Grid Grid.Column="0" Width="70" Height="70" HorizontalAlignment="Center" VerticalAlignment="Center">
+                      <Path Stroke="#252538" StrokeThickness="5" Data="M 35,6 A 29,29 0 1,1 34.99,6"/>
+                      <Path x:Name="TodayBattArcPath" Stroke="$($Config.AccentGreen)" StrokeThickness="5"
+                            StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                      <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <TextBlock x:Name="TodayBattIcon" Text="&#xEA93;" FontFamily="Segoe MDL2 Assets"
+                                   FontSize="13" Foreground="$($Config.AccentGreen)" HorizontalAlignment="Center"/>
+                        <TextBlock x:Name="TodayBattPct" Text="85%" Foreground="$($Config.TextColor)"
+                                   FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="12" FontWeight="Bold"
+                                   HorizontalAlignment="Center" Margin="0,1,0,0"/>
+                      </StackPanel>
+                    </Grid>
+
+                    <!-- Battery Status & AC Text -->
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="8,0,0,0">
+                      <TextBlock Text="POWER &amp; BATTERY" Foreground="#777788"
+                                 FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="9" FontWeight="Bold"/>
+                      <TextBlock x:Name="TodayBattStatus" Text="AC Connected | Charging"
+                                 Foreground="$($Config.AccentGreen)" FontFamily="Segoe UI Variable Text, Segoe UI"
+                                 FontSize="11" FontWeight="SemiBold" Margin="0,2,0,0"/>
+                      <TextBlock Text="System Ready" Foreground="#55FFFFFF" FontSize="10" Margin="0,1,0,0"/>
                     </StackPanel>
-                    <TextBlock x:Name="TodayBattPct" Text="85%" Foreground="$($Config.TextColor)"
-                               FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="13" FontWeight="Bold"
-                               HorizontalAlignment="Right"/>
                   </Grid>
 
-                  <!-- Battery Progress Bar -->
-                  <Border Background="#252535" Height="7" CornerRadius="3.5" Margin="0,0,0,8">
-                    <Border x:Name="TodayBattBar" Background="$($Config.AccentGreen)" Height="7" CornerRadius="3.5"
-                            HorizontalAlignment="Left" Width="140"/>
-                  </Border>
-
-                  <TextBlock x:Name="TodayBattStatus" Text="AC Connected  |  Charging"
-                             Foreground="$($Config.AccentGreen)" FontFamily="Segoe UI Variable Text, Segoe UI"
-                             FontSize="11" Margin="0,0,0,12"/>
-
-                  <!-- Mini System Stats Badges -->
-                  <Grid>
+                  <!-- Bottom: 3 System Micro Glass Cards (CPU, GPU, RAM) -->
+                  <Grid Grid.Row="1">
                     <Grid.ColumnDefinitions>
                       <ColumnDefinition Width="*"/>
                       <ColumnDefinition Width="*"/>
                       <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
 
-                    <Border Grid.Column="0" Background="#1C1C28" CornerRadius="8" Padding="4,5" Margin="0,0,3,0">
+                    <Border Grid.Column="0" Background="#181824" BorderBrush="#2A2A3C" BorderThickness="1" CornerRadius="10" Padding="4,5" Margin="0,0,3,0">
                       <StackPanel HorizontalAlignment="Center">
-                        <TextBlock Text="CPU" Foreground="#888899" FontSize="10" HorizontalAlignment="Center"/>
-                        <TextBlock x:Name="TodayMiniCpu" Text="0%" Foreground="$($Config.GlowColor)" FontWeight="Bold" FontSize="11" HorizontalAlignment="Center"/>
+                        <TextBlock Text="CPU" Foreground="#888899" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                        <TextBlock x:Name="TodayMiniCpu" Text="0%" Foreground="$($Config.GlowColor)" FontWeight="Bold" FontSize="12" HorizontalAlignment="Center"/>
                       </StackPanel>
                     </Border>
 
-                    <Border Grid.Column="1" Background="#1C1C28" CornerRadius="8" Padding="4,5" Margin="2,0,2,0">
+                    <Border Grid.Column="1" Background="#181824" BorderBrush="#2A2A3C" BorderThickness="1" CornerRadius="10" Padding="4,5" Margin="2,0,2,0">
                       <StackPanel HorizontalAlignment="Center">
-                        <TextBlock Text="GPU" Foreground="#888899" FontSize="10" HorizontalAlignment="Center"/>
-                        <TextBlock x:Name="TodayMiniGpu" Text="0%" Foreground="$($Config.AccentPurple)" FontWeight="Bold" FontSize="11" HorizontalAlignment="Center"/>
+                        <TextBlock Text="GPU" Foreground="#888899" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                        <TextBlock x:Name="TodayMiniGpu" Text="0%" Foreground="$($Config.AccentPurple)" FontWeight="Bold" FontSize="12" HorizontalAlignment="Center"/>
                       </StackPanel>
                     </Border>
 
-                    <Border Grid.Column="2" Background="#1C1C28" CornerRadius="8" Padding="4,5" Margin="3,0,0,0">
+                    <Border Grid.Column="2" Background="#181824" BorderBrush="#2A2A3C" BorderThickness="1" CornerRadius="10" Padding="4,5" Margin="3,0,0,0">
                       <StackPanel HorizontalAlignment="Center">
-                        <TextBlock Text="RAM" Foreground="#888899" FontSize="10" HorizontalAlignment="Center"/>
-                        <TextBlock x:Name="TodayMiniRam" Text="0%" Foreground="$($Config.AccentGreen)" FontWeight="Bold" FontSize="11" HorizontalAlignment="Center"/>
+                        <TextBlock Text="RAM" Foreground="#888899" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                        <TextBlock x:Name="TodayMiniRam" Text="0%" Foreground="$($Config.AccentGreen)" FontWeight="Bold" FontSize="12" HorizontalAlignment="Center"/>
                       </StackPanel>
                     </Border>
                   </Grid>
 
-                </StackPanel>
+                </Grid>
               </Border>
             </Grid>
 
             <!-- =========================================================== -->
-            <!-- TAB 2: MEDIA VIEW (60 FPS Animated Equalizer)               -->
+            <!-- TAB 2: MEDIA VIEW (Live Album Art & 8-Bar Dynamic EQ)       -->
             <!-- =========================================================== -->
             <Grid x:Name="ViewMedia" Grid.Row="1" Visibility="Collapsed">
               <Grid.ColumnDefinitions>
@@ -792,28 +913,40 @@ function Get-ArcPath ([double]$cx, [double]$cy, [double]$r, [double]$pct) {
                 <ColumnDefinition Width="*"/>
               </Grid.ColumnDefinitions>
 
-              <!-- Left: Album Artwork Container -->
-              <Border Grid.Column="0" Width="110" Height="140" CornerRadius="16" Margin="0,0,14,0"
-                      Background="#141420" BorderBrush="#25FFFFFF" BorderThickness="1">
+              <!-- Left: 80x80px Live Album Artwork Container -->
+              <Border Grid.Column="0" Width="80" Height="80" CornerRadius="14" Margin="0,0,12,0"
+                      Background="#141420" BorderBrush="#2A2A3C" BorderThickness="1"
+                      VerticalAlignment="Center">
+                <Border.Effect>
+                  <DropShadowEffect BlurRadius="12" ShadowDepth="2" Opacity="0.4" Color="#000000"/>
+                </Border.Effect>
                 <Grid>
-                  <Border CornerRadius="16">
+                  <!-- Live Decoded Cover Art -->
+                  <Image x:Name="AlbumArtImage" Width="80" Height="80" Stretch="UniformToFill" Visibility="Collapsed">
+                    <Image.Clip>
+                      <RectangleGeometry Rect="0,0,80,80" RadiusX="14" RadiusY="14"/>
+                    </Image.Clip>
+                  </Image>
+
+                  <!-- Fallback Gradient Glass Container -->
+                  <Border x:Name="AlbumArtFallback" CornerRadius="14" Visibility="Visible">
                     <Border.Background>
                       <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                        <GradientStop Color="#2A1640" Offset="0"/>
-                        <GradientStop Color="#0F172A" Offset="1"/>
+                        <GradientStop Color="#1E1B2E" Offset="0"/>
+                        <GradientStop Color="#0F0E17" Offset="1"/>
                       </LinearGradientBrush>
                     </Border.Background>
+                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                      <TextBlock Text="&#xE8D6;" FontFamily="Segoe MDL2 Assets" FontSize="26"
+                                 Foreground="$($Config.GlowColor)" HorizontalAlignment="Center"/>
+                      <TextBlock Text="AUDIO" Foreground="#55FFFFFF" FontSize="8" FontWeight="Bold" Margin="0,2,0,0" HorizontalAlignment="Center"/>
+                    </StackPanel>
                   </Border>
-                  <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                    <TextBlock Text="&#xE8D6;" FontFamily="Segoe MDL2 Assets" FontSize="36"
-                               Foreground="$($Config.GlowColor)" HorizontalAlignment="Center"/>
-                    <TextBlock Text="SMTC Audio" Foreground="#66FFFFFF" FontSize="10" Margin="0,4,0,0" HorizontalAlignment="Center"/>
-                  </StackPanel>
                 </Grid>
               </Border>
 
-              <!-- Right: Song Info, Wave Equalizer & Pill Controls -->
-              <Border Grid.Column="1" Background="#14141E" CornerRadius="16" BorderBrush="#1FFFFFFF" BorderThickness="1" Padding="14,10">
+              <!-- Right: Track Info, 8-Bar Equalizer & Pill Controls -->
+              <Border Grid.Column="1" Background="#14141E" CornerRadius="16" BorderBrush="#1FFFFFFF" BorderThickness="1" Padding="12,10">
                 <Grid>
                   <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -822,37 +955,38 @@ function Get-ArcPath ([double]$cx, [double]$cy, [double]$r, [double]$pct) {
                     <RowDefinition Height="*"/>
                   </Grid.RowDefinitions>
 
-                  <!-- Song Title -->
+                  <!-- Track Title -->
                   <TextBlock x:Name="MediaTitleText" Grid.Row="0" Text="No Media Playing"
                              Foreground="$($Config.TextColor)"
                              FontFamily="Segoe UI Variable Display, Segoe UI"
                              FontSize="14" FontWeight="Bold"
                              TextTrimming="CharacterEllipsis"/>
 
-                  <!-- Artist -->
+                  <!-- Artist Name -->
                   <TextBlock x:Name="MediaArtistText" Grid.Row="1" Text="Windows SMTC Audio Session"
                              Foreground="$($Config.SubtextColor)"
                              FontFamily="Segoe UI Variable Text, Segoe UI"
-                             FontSize="12" Margin="0,2,0,6"
+                             FontSize="11" Margin="0,1,0,4"
                              TextTrimming="CharacterEllipsis"/>
 
-                  <!-- ANIMATED AUDIO WAVEFORM EQUALIZER -->
-                  <Grid Grid.Row="2" Height="26" Margin="0,0,0,8">
-                    <Path x:Name="MediaWaveLine" Stroke="#5500E5FF" StrokeThickness="2" VerticalAlignment="Center"/>
+                  <!-- 8-BAR ANIMATED AUDIO EQUALIZER -->
+                  <Grid Grid.Row="2" Height="22" Margin="0,0,0,6">
+                    <Path x:Name="MediaWaveLine" Stroke="#4400E5FF" StrokeThickness="1.5" VerticalAlignment="Center"/>
 
-                    <!-- 7 Dynamic Equalizer Bars -->
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Height="24">
-                      <Border x:Name="EqBar1" Width="4" Height="6" Background="$($Config.GlowColor)" CornerRadius="2" Margin="2,0" VerticalAlignment="Bottom"/>
-                      <Border x:Name="EqBar2" Width="4" Height="14" Background="$($Config.GlowColor)" CornerRadius="2" Margin="2,0" VerticalAlignment="Bottom"/>
-                      <Border x:Name="EqBar3" Width="4" Height="20" Background="$($Config.GlowColor)" CornerRadius="2" Margin="2,0" VerticalAlignment="Bottom"/>
-                      <Border x:Name="EqBar4" Width="4" Height="16" Background="$($Config.GlowColor)" CornerRadius="2" Margin="2,0" VerticalAlignment="Bottom"/>
-                      <Border x:Name="EqBar5" Width="4" Height="22" Background="$($Config.GlowColor)" CornerRadius="2" Margin="2,0" VerticalAlignment="Bottom"/>
-                      <Border x:Name="EqBar6" Width="4" Height="12" Background="$($Config.GlowColor)" CornerRadius="2" Margin="2,0" VerticalAlignment="Bottom"/>
+                    <!-- 8 Dynamic Equalizer Bars -->
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Height="20">
+                      <Border x:Name="EqBar1" Width="4" Height="4" Background="$($Config.GlowColor)" CornerRadius="2" Margin="2,0" VerticalAlignment="Bottom"/>
+                      <Border x:Name="EqBar2" Width="4" Height="10" Background="$($Config.GlowColor)" CornerRadius="2" Margin="2,0" VerticalAlignment="Bottom"/>
+                      <Border x:Name="EqBar3" Width="4" Height="16" Background="$($Config.GlowColor)" CornerRadius="2" Margin="2,0" VerticalAlignment="Bottom"/>
+                      <Border x:Name="EqBar4" Width="4" Height="12" Background="$($Config.GlowColor)" CornerRadius="2" Margin="2,0" VerticalAlignment="Bottom"/>
+                      <Border x:Name="EqBar5" Width="4" Height="18" Background="$($Config.GlowColor)" CornerRadius="2" Margin="2,0" VerticalAlignment="Bottom"/>
+                      <Border x:Name="EqBar6" Width="4" Height="14" Background="$($Config.GlowColor)" CornerRadius="2" Margin="2,0" VerticalAlignment="Bottom"/>
                       <Border x:Name="EqBar7" Width="4" Height="8" Background="$($Config.GlowColor)" CornerRadius="2" Margin="2,0" VerticalAlignment="Bottom"/>
+                      <Border x:Name="EqBar8" Width="4" Height="4" Background="$($Config.GlowColor)" CornerRadius="2" Margin="2,0" VerticalAlignment="Bottom"/>
                     </StackPanel>
                   </Grid>
 
-                  <!-- Media Pill Controls + Volume Mini -->
+                  <!-- Media Action Buttons + Horizontal Volume Slider -->
                   <Grid Grid.Row="3" VerticalAlignment="Bottom">
                     <Grid.ColumnDefinitions>
                       <ColumnDefinition Width="Auto"/>
@@ -861,12 +995,12 @@ function Get-ArcPath ([double]$cx, [double]$cy, [double]$r, [double]$pct) {
 
                     <StackPanel Grid.Column="0" Orientation="Horizontal">
                       <Button x:Name="BtnMediaPrev" Content="&#xE892;" FontFamily="Segoe MDL2 Assets"
-                              FontSize="13" Foreground="$($Config.TextColor)"
+                              FontSize="12" Foreground="$($Config.TextColor)"
                               Background="#1C1C28" BorderBrush="#33FFFFFF" BorderThickness="1"
-                              Width="38" Height="32" Cursor="Hand" Focusable="False">
+                              Width="36" Height="28" Cursor="Hand" Focusable="False">
                         <Button.Template>
                           <ControlTemplate TargetType="Button">
-                            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="16">
+                            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="14">
                               <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
                           </ControlTemplate>
@@ -874,12 +1008,12 @@ function Get-ArcPath ([double]$cx, [double]$cy, [double]$r, [double]$pct) {
                       </Button>
 
                       <Button x:Name="BtnMediaPlay" Content="&#xE768;" FontFamily="Segoe MDL2 Assets"
-                              FontSize="16" Foreground="#000000"
+                              FontSize="15" Foreground="#000000"
                               Background="$($Config.GlowColor)" BorderThickness="0"
-                              Width="44" Height="32" Margin="8,0" Cursor="Hand" Focusable="False">
+                              Width="42" Height="28" Margin="6,0" Cursor="Hand" Focusable="False">
                         <Button.Template>
                           <ControlTemplate TargetType="Button">
-                            <Border Background="{TemplateBinding Background}" CornerRadius="16">
+                            <Border Background="{TemplateBinding Background}" CornerRadius="14">
                               <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
                           </ControlTemplate>
@@ -887,12 +1021,12 @@ function Get-ArcPath ([double]$cx, [double]$cy, [double]$r, [double]$pct) {
                       </Button>
 
                       <Button x:Name="BtnMediaNext" Content="&#xE893;" FontFamily="Segoe MDL2 Assets"
-                              FontSize="13" Foreground="$($Config.TextColor)"
+                              FontSize="12" Foreground="$($Config.TextColor)"
                               Background="#1C1C28" BorderBrush="#33FFFFFF" BorderThickness="1"
-                              Width="38" Height="32" Cursor="Hand" Focusable="False">
+                              Width="36" Height="28" Cursor="Hand" Focusable="False">
                         <Button.Template>
                           <ControlTemplate TargetType="Button">
-                            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="16">
+                            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="14">
                               <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
                           </ControlTemplate>
@@ -900,9 +1034,13 @@ function Get-ArcPath ([double]$cx, [double]$cy, [double]$r, [double]$pct) {
                       </Button>
                     </StackPanel>
 
+                    <!-- Horizontal Volume Slider -->
                     <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                      <TextBlock Text="&#xE767;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="$($Config.SubtextColor)" Margin="0,0,6,0"/>
-                      <TextBlock x:Name="MediaVolPct" Text="50%" Foreground="$($Config.SubtextColor)" FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="11" Width="30"/>
+                      <TextBlock Text="&#xE767;" FontFamily="Segoe MDL2 Assets" FontSize="11" Foreground="$($Config.SubtextColor)" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                      <Slider x:Name="MediaVolSlider" Style="{StaticResource ModernGlowSlider}" Minimum="0" Maximum="100" Value="50"
+                              Width="90" Height="16" VerticalAlignment="Center" Focusable="False"/>
+                      <TextBlock x:Name="MediaVolPct" Text="50%" Foreground="$($Config.SubtextColor)"
+                                 FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="10" Width="28" Margin="6,0,0,0" VerticalAlignment="Center"/>
                     </StackPanel>
                   </Grid>
 
@@ -914,176 +1052,163 @@ function Get-ArcPath ([double]$cx, [double]$cy, [double]$r, [double]$pct) {
             <!-- TAB 3: STATS VIEW (Ring Gauges)                             -->
             <!-- =========================================================== -->
             <Grid x:Name="ViewStats" Grid.Row="1" Visibility="Collapsed">
-              <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-              </Grid.RowDefinitions>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+              </Grid.ColumnDefinitions>
 
-              <Border Grid.Row="0" Background="#14141E" CornerRadius="16" BorderBrush="#1FFFFFFF" BorderThickness="1" Padding="14,12">
-                <Grid>
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="*"/>
-                  </Grid.ColumnDefinitions>
-
-                  <!-- 1. CPU RING GAUGE -->
-                  <StackPanel x:Name="RingPanelCpu" Grid.Column="0" HorizontalAlignment="Center">
-                    <Grid Width="72" Height="72">
-                      <Ellipse Width="60" Height="60" Stroke="#232330" StrokeThickness="5.5"/>
-                      <Path x:Name="CpuArcPath" Stroke="$($Config.GlowColor)" StrokeThickness="5.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
-                      <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                        <TextBlock x:Name="CpuPctText" Text="0%" Foreground="$($Config.TextColor)"
-                                   FontFamily="Segoe UI Variable Display, Segoe UI" FontSize="14" FontWeight="Bold"
-                                   HorizontalAlignment="Center"/>
-                      </StackPanel>
-                    </Grid>
-                    <TextBlock Text="CPU LOAD" Foreground="$($Config.SubtextColor)"
-                               FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="11" FontWeight="SemiBold"
-                               HorizontalAlignment="Center" Margin="0,6,0,0"/>
-                  </StackPanel>
-
-                  <!-- 2. GPU RING GAUGE -->
-                  <StackPanel x:Name="RingPanelGpu" Grid.Column="1" HorizontalAlignment="Center">
-                    <Grid Width="72" Height="72">
-                      <Ellipse Width="60" Height="60" Stroke="#232330" StrokeThickness="5.5"/>
-                      <Path x:Name="GpuArcPath" Stroke="$($Config.AccentPurple)" StrokeThickness="5.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
-                      <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                        <TextBlock x:Name="GpuPctText" Text="0%" Foreground="$($Config.TextColor)"
-                                   FontFamily="Segoe UI Variable Display, Segoe UI" FontSize="14" FontWeight="Bold"
-                                   HorizontalAlignment="Center"/>
-                      </StackPanel>
-                    </Grid>
-                    <TextBlock Text="GPU LOAD" Foreground="$($Config.SubtextColor)"
-                               FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="11" FontWeight="SemiBold"
-                               HorizontalAlignment="Center" Margin="0,6,0,0"/>
-                  </StackPanel>
-
-                  <!-- 3. RAM RING GAUGE -->
-                  <StackPanel x:Name="RingPanelRam" Grid.Column="2" HorizontalAlignment="Center">
-                    <Grid Width="72" Height="72">
-                      <Ellipse Width="60" Height="60" Stroke="#232330" StrokeThickness="5.5"/>
-                      <Path x:Name="RamArcPath" Stroke="$($Config.AccentGreen)" StrokeThickness="5.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
-                      <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                        <TextBlock x:Name="RamPctText" Text="0%" Foreground="$($Config.TextColor)"
-                                   FontFamily="Segoe UI Variable Display, Segoe UI" FontSize="14" FontWeight="Bold"
-                                   HorizontalAlignment="Center"/>
-                      </StackPanel>
-                    </Grid>
-                    <TextBlock Text="MEMORY" Foreground="$($Config.SubtextColor)"
-                               FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="11" FontWeight="SemiBold"
-                               HorizontalAlignment="Center" Margin="0,6,0,0"/>
-                  </StackPanel>
-
-                </Grid>
+              <!-- CPU Gauge -->
+              <Border Grid.Column="0" Background="#14141E" CornerRadius="16" BorderBrush="#1FFFFFFF" BorderThickness="1" Margin="0,0,4,0" Padding="8,10">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                  <Grid Width="72" Height="72" HorizontalAlignment="Center">
+                    <Path Stroke="#252538" StrokeThickness="5" Data="M 36,6 A 30,30 0 1,1 35.99,6"/>
+                    <Path x:Name="CpuArcPath" Stroke="$($Config.GlowColor)" StrokeThickness="5" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                    <TextBlock x:Name="StatsCpuPct" Text="0%" Foreground="$($Config.TextColor)"
+                               FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="13" FontWeight="Bold"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                  </Grid>
+                  <TextBlock Text="CPU LOAD" Foreground="#888899" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,6,0,0"/>
+                </StackPanel>
               </Border>
 
-              <Border Grid.Row="1" Background="#161622" CornerRadius="12" Margin="0,10,0,0" Padding="14,8">
-                <Grid>
-                  <TextBlock x:Name="StatsSummaryText" Text="Hardware Telemetry Active"
-                             Foreground="$($Config.SubtextColor)" FontFamily="Segoe UI Variable Text, Segoe UI"
-                             FontSize="11" HorizontalAlignment="Center"/>
-                </Grid>
+              <!-- GPU Gauge -->
+              <Border Grid.Column="1" Background="#14141E" CornerRadius="16" BorderBrush="#1FFFFFFF" BorderThickness="1" Margin="2,0,2,0" Padding="8,10">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                  <Grid Width="72" Height="72" HorizontalAlignment="Center">
+                    <Path Stroke="#252538" StrokeThickness="5" Data="M 36,6 A 30,30 0 1,1 35.99,6"/>
+                    <Path x:Name="GpuArcPath" Stroke="$($Config.AccentPurple)" StrokeThickness="5" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                    <TextBlock x:Name="StatsGpuPct" Text="0%" Foreground="$($Config.TextColor)"
+                               FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="13" FontWeight="Bold"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                  </Grid>
+                  <TextBlock Text="GPU 3D" Foreground="#888899" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,6,0,0"/>
+                </StackPanel>
               </Border>
 
+              <!-- RAM Gauge -->
+              <Border Grid.Column="2" Background="#14141E" CornerRadius="16" BorderBrush="#1FFFFFFF" BorderThickness="1" Margin="4,0,0,0" Padding="8,10">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                  <Grid Width="72" Height="72" HorizontalAlignment="Center">
+                    <Path Stroke="#252538" StrokeThickness="5" Data="M 36,6 A 30,30 0 1,1 35.99,6"/>
+                    <Path x:Name="RamArcPath" Stroke="$($Config.AccentGreen)" StrokeThickness="5" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                    <TextBlock x:Name="StatsRamPct" Text="0%" Foreground="$($Config.TextColor)"
+                               FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="13" FontWeight="Bold"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                  </Grid>
+                  <TextBlock Text="MEMORY" Foreground="#888899" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,6,0,0"/>
+                </StackPanel>
+              </Border>
             </Grid>
 
             <!-- =========================================================== -->
-            <!-- TAB 4: CONTROLS VIEW (Quick Settings & Volume)              -->
+            <!-- TAB 4: CONTROLS VIEW (Quick Toggles & Sliders)               -->
             <!-- =========================================================== -->
             <Grid x:Name="ViewControls" Grid.Row="1" Visibility="Collapsed">
-              <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-              </Grid.RowDefinitions>
-
-              <Grid Grid.Row="0" Margin="0,0,0,10">
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="*"/>
-                  <ColumnDefinition Width="*"/>
-                  <ColumnDefinition Width="*"/>
-                  <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
-
-                <!-- Wi-Fi Tile -->
-                <Button x:Name="BtnCtrlWifi" Grid.Column="0" Background="#14141E" BorderBrush="#1FFFFFFF" BorderThickness="1"
-                        Height="64" Margin="0,0,4,0" Cursor="Hand" Focusable="False">
-                  <Button.Template>
-                    <ControlTemplate TargetType="Button">
-                      <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="14">
-                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                          <TextBlock Text="&#xE701;" FontFamily="Segoe MDL2 Assets" FontSize="16" Foreground="$($Config.GlowColor)" HorizontalAlignment="Center"/>
-                          <TextBlock Text="Wi-Fi" Foreground="$($Config.TextColor)" FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="11" FontWeight="SemiBold" Margin="0,4,0,0" HorizontalAlignment="Center"/>
-                        </StackPanel>
-                      </Border>
-                    </ControlTemplate>
-                  </Button.Template>
-                </Button>
-
-                <!-- Bluetooth Tile -->
-                <Button x:Name="BtnCtrlBt" Grid.Column="1" Background="#14141E" BorderBrush="#1FFFFFFF" BorderThickness="1"
-                        Height="64" Margin="2,0,2,0" Cursor="Hand" Focusable="False">
-                  <Button.Template>
-                    <ControlTemplate TargetType="Button">
-                      <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="14">
-                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                          <TextBlock Text="&#xE702;" FontFamily="Segoe MDL2 Assets" FontSize="16" Foreground="$($Config.AccentPurple)" HorizontalAlignment="Center"/>
-                          <TextBlock Text="Bluetooth" Foreground="$($Config.TextColor)" FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="11" FontWeight="SemiBold" Margin="0,4,0,0" HorizontalAlignment="Center"/>
-                        </StackPanel>
-                      </Border>
-                    </ControlTemplate>
-                  </Button.Template>
-                </Button>
-
-                <!-- Dark Mode Toggle Tile -->
-                <Button x:Name="BtnCtrlTheme" Grid.Column="2" Background="#14141E" BorderBrush="#1FFFFFFF" BorderThickness="1"
-                        Height="64" Margin="2,0,2,0" Cursor="Hand" Focusable="False">
-                  <Button.Template>
-                    <ControlTemplate TargetType="Button">
-                      <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="14">
-                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                          <TextBlock x:Name="ThemeTileIcon" Text="&#xE708;" FontFamily="Segoe MDL2 Assets" FontSize="16" Foreground="$($Config.GlowColor)" HorizontalAlignment="Center"/>
-                          <TextBlock x:Name="ThemeTileText" Text="Dark Mode" Foreground="$($Config.TextColor)" FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="11" FontWeight="SemiBold" Margin="0,4,0,0" HorizontalAlignment="Center"/>
-                        </StackPanel>
-                      </Border>
-                    </ControlTemplate>
-                  </Button.Template>
-                </Button>
-
-                <!-- Task Manager Tile -->
-                <Button x:Name="BtnCtrlTaskMgr" Grid.Column="3" Background="#14141E" BorderBrush="#1FFFFFFF" BorderThickness="1"
-                        Height="64" Margin="4,0,0,0" Cursor="Hand" Focusable="False">
-                  <Button.Template>
-                    <ControlTemplate TargetType="Button">
-                      <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="14">
-                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                          <TextBlock Text="&#xE9D9;" FontFamily="Segoe MDL2 Assets" FontSize="16" Foreground="$($Config.AccentGreen)" HorizontalAlignment="Center"/>
-                          <TextBlock Text="Task Mgr" Foreground="$($Config.TextColor)" FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="11" FontWeight="SemiBold" Margin="0,4,0,0" HorizontalAlignment="Center"/>
-                        </StackPanel>
-                      </Border>
-                    </ControlTemplate>
-                  </Button.Template>
-                </Button>
-              </Grid>
-
-              <!-- Master Volume Slider Card -->
-              <Border Grid.Row="1" Background="#14141E" CornerRadius="14" BorderBrush="#1FFFFFFF" BorderThickness="1" Padding="14,10">
+              <Border Background="#14141E" CornerRadius="16" BorderBrush="#1FFFFFFF" BorderThickness="1" Padding="14,10">
                 <Grid>
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                  </Grid.ColumnDefinitions>
+                  <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                  </Grid.RowDefinitions>
 
-                  <TextBlock Grid.Column="0" Text="&#xE995;" FontFamily="Segoe MDL2 Assets" FontSize="16"
-                             Foreground="$($Config.GlowColor)" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                  <!-- Row 0: Volume & Brightness Sliders -->
+                  <Grid Grid.Row="0" Margin="0,0,0,10">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="*"/>
+                      <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
 
-                  <Slider x:Name="CtrlVolSlider" Grid.Column="1" Minimum="0" Maximum="100" Value="50"
-                          VerticalAlignment="Center" Focusable="False" Cursor="Hand"/>
+                    <!-- Master Volume -->
+                    <Border Grid.Column="0" Background="#181824" CornerRadius="12" Padding="10,6" Margin="0,0,4,0">
+                      <Grid>
+                        <Grid.RowDefinitions>
+                          <RowDefinition Height="Auto"/>
+                          <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <Grid Grid.Row="0">
+                          <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE767;" FontFamily="Segoe MDL2 Assets" FontSize="11" Foreground="$($Config.GlowColor)" Margin="0,0,6,0"/>
+                            <TextBlock Text="Master Volume" Foreground="#9999AA" FontSize="10" FontWeight="SemiBold"/>
+                          </StackPanel>
+                          <TextBlock x:Name="CtrlVolLabel" Text="50%" Foreground="#FFFFFF" FontSize="10" FontWeight="Bold" HorizontalAlignment="Right"/>
+                        </Grid>
+                        <Slider x:Name="CtrlVolSlider" Style="{StaticResource ModernGlowSlider}" Grid.Row="1" Minimum="0" Maximum="100" Value="50" Margin="0,4,0,0"/>
+                      </Grid>
+                    </Border>
 
-                  <TextBlock x:Name="CtrlVolLabel" Grid.Column="2" Text="50%" Foreground="$($Config.TextColor)"
-                             FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="12" FontWeight="Bold"
-                             VerticalAlignment="Center" Margin="12,0,0,0" Width="36" TextAlignment="Right"/>
+                    <!-- Quick Mute Toggle -->
+                    <Border Grid.Column="1" Background="#181824" CornerRadius="12" Padding="10,6" Margin="4,0,0,0">
+                      <Grid VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                          <TextBlock Text="&#xE74F;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="$($Config.SubtextColor)" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                          <TextBlock Text="Mute Master Audio" Foreground="#9999AA" FontSize="10" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <Button x:Name="BtnMuteToggle" Content="Toggle" HorizontalAlignment="Right" Width="54" Height="22"
+                                Background="#262638" Foreground="#FFFFFF" BorderThickness="0" Cursor="Hand" Focusable="False">
+                          <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                              <Border Background="{TemplateBinding Background}" CornerRadius="10">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                              </Border>
+                            </ControlTemplate>
+                          </Button.Template>
+                        </Button>
+                      </Grid>
+                    </Border>
+                  </Grid>
+
+                  <!-- Row 1: Quick Actions -->
+                  <Grid Grid.Row="1">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="*"/>
+                      <ColumnDefinition Width="*"/>
+                      <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <Button x:Name="BtnActionTaskMgr" Grid.Column="0" Margin="0,0,3,0" Height="36"
+                            Background="#181824" BorderBrush="#25FFFFFF" BorderThickness="1" Cursor="Hand" Focusable="False">
+                      <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                          <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="10">
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                              <TextBlock Text="&#xE9D9;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="$($Config.GlowColor)" Margin="0,0,6,0"/>
+                              <TextBlock Text="Task Mgr" Foreground="#FFFFFF" FontSize="10" FontWeight="SemiBold"/>
+                            </StackPanel>
+                          </Border>
+                        </ControlTemplate>
+                      </Button.Template>
+                    </Button>
+
+                    <Button x:Name="BtnActionSettings" Grid.Column="1" Margin="2,0,2,0" Height="36"
+                            Background="#181824" BorderBrush="#25FFFFFF" BorderThickness="1" Cursor="Hand" Focusable="False">
+                      <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                          <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="10">
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                              <TextBlock Text="&#xE713;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="$($Config.AccentPurple)" Margin="0,0,6,0"/>
+                              <TextBlock Text="Windows Settings" Foreground="#FFFFFF" FontSize="10" FontWeight="SemiBold"/>
+                            </StackPanel>
+                          </Border>
+                        </ControlTemplate>
+                      </Button.Template>
+                    </Button>
+
+                    <Button x:Name="BtnActionExplorer" Grid.Column="2" Margin="3,0,0,0" Height="36"
+                            Background="#181824" BorderBrush="#25FFFFFF" BorderThickness="1" Cursor="Hand" Focusable="False">
+                      <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                          <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="10">
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                              <TextBlock Text="&#xEC50;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="$($Config.AccentGreen)" Margin="0,0,6,0"/>
+                              <TextBlock Text="Explorer" Foreground="#FFFFFF" FontSize="10" FontWeight="SemiBold"/>
+                            </StackPanel>
+                          </Border>
+                        </ControlTemplate>
+                      </Button.Template>
+                    </Button>
+                  </Grid>
+
                 </Grid>
               </Border>
             </Grid>
@@ -1096,10 +1221,13 @@ function Get-ArcPath ([double]$cx, [double]$cy, [double]$r, [double]$pct) {
                 <Grid>
                   <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
                   </Grid.RowDefinitions>
 
-                  <Grid Grid.Row="0">
+                  <TextBlock Grid.Row="0" Text="SYSTEM POWER ACTIONS" Foreground="$($Config.SubtextColor)"
+                             FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="10" FontWeight="Bold" Margin="0,0,0,10"/>
+
+                  <Grid Grid.Row="1">
                     <Grid.ColumnDefinitions>
                       <ColumnDefinition Width="*"/>
                       <ColumnDefinition Width="*"/>
@@ -1107,56 +1235,56 @@ function Get-ArcPath ([double]$cx, [double]$cy, [double]$r, [double]$pct) {
                       <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
 
-                    <Button x:Name="BtnPowerLock" Grid.Column="0" Background="#1C1C28" BorderBrush="#25FFFFFF" BorderThickness="1"
-                            Height="68" Margin="0,0,4,0" Cursor="Hand" Focusable="False">
+                    <Button x:Name="BtnPowerLock" Grid.Column="0" Margin="0,0,3,0" Height="50"
+                            Background="#181824" BorderBrush="#2A2A3C" BorderThickness="1" Cursor="Hand" Focusable="False">
                       <Button.Template>
                         <ControlTemplate TargetType="Button">
-                          <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="14">
+                          <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="12">
                             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                              <TextBlock Text="&#xE72E;" FontFamily="Segoe MDL2 Assets" FontSize="18" Foreground="$($Config.GlowColor)" HorizontalAlignment="Center"/>
-                              <TextBlock Text="Lock" Foreground="$($Config.TextColor)" FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="11" FontWeight="SemiBold" Margin="0,4,0,0" HorizontalAlignment="Center"/>
+                              <TextBlock Text="&#xE72E;" FontFamily="Segoe MDL2 Assets" FontSize="15" Foreground="$($Config.GlowColor)" HorizontalAlignment="Center"/>
+                              <TextBlock Text="Lock" Foreground="#FFFFFF" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,3,0,0"/>
                             </StackPanel>
                           </Border>
                         </ControlTemplate>
                       </Button.Template>
                     </Button>
 
-                    <Button x:Name="BtnPowerSleep" Grid.Column="1" Background="#1C1C28" BorderBrush="#25FFFFFF" BorderThickness="1"
-                            Height="68" Margin="2,0,2,0" Cursor="Hand" Focusable="False">
+                    <Button x:Name="BtnPowerSleep" Grid.Column="1" Margin="2,0,2,0" Height="50"
+                            Background="#181824" BorderBrush="#2A2A3C" BorderThickness="1" Cursor="Hand" Focusable="False">
                       <Button.Template>
                         <ControlTemplate TargetType="Button">
-                          <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="14">
+                          <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="12">
                             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                              <TextBlock Text="&#xE708;" FontFamily="Segoe MDL2 Assets" FontSize="18" Foreground="$($Config.AccentPurple)" HorizontalAlignment="Center"/>
-                              <TextBlock Text="Sleep" Foreground="$($Config.TextColor)" FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="11" FontWeight="SemiBold" Margin="0,4,0,0" HorizontalAlignment="Center"/>
+                              <TextBlock Text="&#xE708;" FontFamily="Segoe MDL2 Assets" FontSize="15" Foreground="$($Config.AccentPurple)" HorizontalAlignment="Center"/>
+                              <TextBlock Text="Sleep" Foreground="#FFFFFF" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,3,0,0"/>
                             </StackPanel>
                           </Border>
                         </ControlTemplate>
                       </Button.Template>
                     </Button>
 
-                    <Button x:Name="BtnPowerRestart" Grid.Column="2" Background="#1C1C28" BorderBrush="#25FFFFFF" BorderThickness="1"
-                            Height="68" Margin="2,0,2,0" Cursor="Hand" Focusable="False">
+                    <Button x:Name="BtnPowerRestart" Grid.Column="2" Margin="2,0,2,0" Height="50"
+                            Background="#181824" BorderBrush="#2A2A3C" BorderThickness="1" Cursor="Hand" Focusable="False">
                       <Button.Template>
                         <ControlTemplate TargetType="Button">
-                          <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="14">
+                          <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="12">
                             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                              <TextBlock Text="&#xE777;" FontFamily="Segoe MDL2 Assets" FontSize="18" Foreground="$($Config.WarnColor)" HorizontalAlignment="Center"/>
-                              <TextBlock Text="Restart" Foreground="$($Config.TextColor)" FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="11" FontWeight="SemiBold" Margin="0,4,0,0" HorizontalAlignment="Center"/>
+                              <TextBlock Text="&#xE777;" FontFamily="Segoe MDL2 Assets" FontSize="15" Foreground="$($Config.WarnColor)" HorizontalAlignment="Center"/>
+                              <TextBlock Text="Restart" Foreground="#FFFFFF" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,3,0,0"/>
                             </StackPanel>
                           </Border>
                         </ControlTemplate>
                       </Button.Template>
                     </Button>
 
-                    <Button x:Name="BtnPowerShutdown" Grid.Column="3" Background="#1C1C28" BorderBrush="#25FFFFFF" BorderThickness="1"
-                            Height="68" Margin="4,0,0,0" Cursor="Hand" Focusable="False">
+                    <Button x:Name="BtnPowerShutdown" Grid.Column="3" Margin="3,0,0,0" Height="50"
+                            Background="#181824" BorderBrush="#2A2A3C" BorderThickness="1" Cursor="Hand" Focusable="False">
                       <Button.Template>
                         <ControlTemplate TargetType="Button">
-                          <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="14">
+                          <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="12">
                             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                              <TextBlock Text="&#xE7E8;" FontFamily="Segoe MDL2 Assets" FontSize="18" Foreground="$($Config.CritColor)" HorizontalAlignment="Center"/>
-                              <TextBlock Text="Power Off" Foreground="$($Config.TextColor)" FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="11" FontWeight="SemiBold" Margin="0,4,0,0" HorizontalAlignment="Center"/>
+                              <TextBlock Text="&#xE7E8;" FontFamily="Segoe MDL2 Assets" FontSize="15" Foreground="$($Config.CritColor)" HorizontalAlignment="Center"/>
+                              <TextBlock Text="Shut Down" Foreground="#FFFFFF" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,3,0,0"/>
                             </StackPanel>
                           </Border>
                         </ControlTemplate>
@@ -1164,16 +1292,6 @@ function Get-ArcPath ([double]$cx, [double]$cy, [double]$r, [double]$pct) {
                     </Button>
                   </Grid>
 
-                  <Button x:Name="BtnExitIsland" Grid.Row="1" Background="#26FF1744" BorderBrush="#44FF1744" BorderThickness="1"
-                          Height="32" Margin="0,10,0,0" Cursor="Hand" Focusable="False">
-                    <Button.Template>
-                      <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="10">
-                          <TextBlock Text="Quit Dynamic Island" Foreground="#FFFF5252" FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="11" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                      </ControlTemplate>
-                    </Button.Template>
-                  </Button>
                 </Grid>
               </Border>
             </Grid>
@@ -1182,41 +1300,55 @@ function Get-ArcPath ([double]$cx, [double]$cy, [double]$r, [double]$pct) {
             <!-- TAB 6: SETTINGS & INLINE CUSTOMIZATION VIEW                 -->
             <!-- =========================================================== -->
             <Grid x:Name="ViewSettings" Grid.Row="1" Visibility="Collapsed">
-              <Border Background="#14141E" CornerRadius="16" BorderBrush="#1FFFFFFF" BorderThickness="1" Padding="14,10">
+              <Border Background="#14141E" CornerRadius="16" BorderBrush="#1FFFFFFF" BorderThickness="1" Padding="12,10">
                 <Grid>
                   <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
                   </Grid.RowDefinitions>
 
-                  <!-- Row 0: Aura & Accent Swatches -->
-                  <Grid Grid.Row="0" Margin="0,0,0,10">
+                  <!-- Row 0: Aura Swatches & Interactive Custom Hex Input -->
+                  <Grid Grid.Row="0" Margin="0,0,0,8">
                     <Grid.RowDefinitions>
                       <RowDefinition Height="Auto"/>
                       <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
                     <TextBlock Grid.Row="0" Text="AURA &amp; ACCENT GLOW PRESETS" Foreground="$($Config.SubtextColor)"
-                               FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="10" FontWeight="Bold" Margin="0,0,0,6"/>
+                               FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="9" FontWeight="Bold" Margin="0,0,0,5"/>
                     <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center">
-                      <Button x:Name="SwatchCyan" Content="Cyan" Width="64" Height="24" Background="#FF00E5FF" Foreground="#000000" Margin="3,0" Cursor="Hand" Focusable="False" Style="{StaticResource SwatchButtonStyle}"/>
-                      <Button x:Name="SwatchMagenta" Content="Magenta" Width="64" Height="24" Background="#FFFF007F" Foreground="#FFFFFF" Margin="3,0" Cursor="Hand" Focusable="False" Style="{StaticResource SwatchButtonStyle}"/>
-                      <Button x:Name="SwatchPurple" Content="Purple" Width="64" Height="24" Background="#FFA855F7" Foreground="#FFFFFF" Margin="3,0" Cursor="Hand" Focusable="False" Style="{StaticResource SwatchButtonStyle}"/>
-                      <Button x:Name="SwatchEmerald" Content="Emerald" Width="64" Height="24" Background="#FF10B981" Foreground="#000000" Margin="3,0" Cursor="Hand" Focusable="False" Style="{StaticResource SwatchButtonStyle}"/>
-                      <Button x:Name="SwatchAmber" Content="Amber" Width="64" Height="24" Background="#FFFF9100" Foreground="#000000" Margin="3,0" Cursor="Hand" Focusable="False" Style="{StaticResource SwatchButtonStyle}"/>
-                      <Button x:Name="SwatchRed" Content="Red" Width="64" Height="24" Background="#FFFF1744" Foreground="#FFFFFF" Margin="3,0" Cursor="Hand" Focusable="False" Style="{StaticResource SwatchButtonStyle}"/>
+                      <Button x:Name="SwatchCyan" Content="Cyan" Width="52" Height="22" Background="#FF00E5FF" Foreground="#000000" Margin="2,0" Cursor="Hand" Focusable="False" Style="{StaticResource TabPillButtonStyle}"/>
+                      <Button x:Name="SwatchMagenta" Content="Pink" Width="52" Height="22" Background="#FFFF007F" Foreground="#FFFFFF" Margin="2,0" Cursor="Hand" Focusable="False" Style="{StaticResource TabPillButtonStyle}"/>
+                      <Button x:Name="SwatchPurple" Content="Purple" Width="52" Height="22" Background="#FFA855F7" Foreground="#FFFFFF" Margin="2,0" Cursor="Hand" Focusable="False" Style="{StaticResource TabPillButtonStyle}"/>
+                      <Button x:Name="SwatchEmerald" Content="Emerald" Width="56" Height="22" Background="#FF00E676" Foreground="#000000" Margin="2,0" Cursor="Hand" Focusable="False" Style="{StaticResource TabPillButtonStyle}"/>
+                      <Button x:Name="SwatchAmber" Content="Amber" Width="52" Height="22" Background="#FFFFB300" Foreground="#000000" Margin="2,0" Cursor="Hand" Focusable="False" Style="{StaticResource TabPillButtonStyle}"/>
+                      <Button x:Name="SwatchRed" Content="Red" Width="50" Height="22" Background="#FFFF1744" Foreground="#FFFFFF" Margin="2,0" Cursor="Hand" Focusable="False" Style="{StaticResource TabPillButtonStyle}"/>
+
+                      <!-- Custom Hex Input -->
+                      <TextBox x:Name="CustomHexInput" Text="$($Config.GlowColor)" Width="64" Height="22" Margin="6,0,2,0"
+                               Background="#181824" Foreground="#FFFFFF" BorderBrush="#33FFFFFF" BorderThickness="1"
+                               FontFamily="Consolas, Segoe UI" FontSize="10" VerticalContentAlignment="Center" Padding="3,0"/>
+                      <Button x:Name="BtnApplyHex" Content="Apply" Width="44" Height="22"
+                              Background="#252538" Foreground="#FFFFFF" BorderThickness="0" Cursor="Hand" Focusable="False">
+                        <Button.Template>
+                          <ControlTemplate TargetType="Button">
+                            <Border Background="{TemplateBinding Background}" CornerRadius="8">
+                              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                          </ControlTemplate>
+                        </Button.Template>
+                      </Button>
                     </StackPanel>
                   </Grid>
 
-                  <!-- Row 1: Glow Sliders -->
-                  <Grid Grid.Row="1" Margin="0,0,0,10">
+                  <!-- Row 1: Modern Glow Sliders -->
+                  <Grid Grid.Row="1" Margin="0,0,0,8">
                     <Grid.ColumnDefinitions>
                       <ColumnDefinition Width="*"/>
                       <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
 
-                    <Border Grid.Column="0" Background="#1C1C28" CornerRadius="10" Padding="10,6" Margin="0,0,4,0">
+                    <Border Grid.Column="0" Background="#181824" CornerRadius="10" Padding="8,5" Margin="0,0,4,0">
                       <Grid>
                         <Grid.RowDefinitions>
                           <RowDefinition Height="Auto"/>
@@ -1224,13 +1356,13 @@ function Get-ArcPath ([double]$cx, [double]$cy, [double]$r, [double]$pct) {
                         </Grid.RowDefinitions>
                         <Grid Grid.Row="0">
                           <TextBlock Text="Glow Radius" Foreground="#888899" FontSize="10" FontWeight="SemiBold"/>
-                          <TextBlock x:Name="GlowRadiusLabel" Text="26px" Foreground="#FFFFFF" FontSize="10" FontWeight="Bold" HorizontalAlignment="Right"/>
+                          <TextBlock x:Name="GlowRadiusLabel" Text="28px" Foreground="#FFFFFF" FontSize="10" FontWeight="Bold" HorizontalAlignment="Right"/>
                         </Grid>
-                        <Slider x:Name="GlowRadiusSlider" Grid.Row="1" Minimum="10" Maximum="45" Value="26" Margin="0,4,0,0" Focusable="False" Cursor="Hand"/>
+                        <Slider x:Name="GlowRadiusSlider" Style="{StaticResource ModernGlowSlider}" Grid.Row="1" Minimum="10" Maximum="50" Value="28" Margin="0,4,0,0"/>
                       </Grid>
                     </Border>
 
-                    <Border Grid.Column="1" Background="#1C1C28" CornerRadius="10" Padding="10,6" Margin="4,0,0,0">
+                    <Border Grid.Column="1" Background="#181824" CornerRadius="10" Padding="8,5" Margin="4,0,0,0">
                       <Grid>
                         <Grid.RowDefinitions>
                           <RowDefinition Height="Auto"/>
@@ -1238,42 +1370,27 @@ function Get-ArcPath ([double]$cx, [double]$cy, [double]$r, [double]$pct) {
                         </Grid.RowDefinitions>
                         <Grid Grid.Row="0">
                           <TextBlock Text="Glow Opacity" Foreground="#888899" FontSize="10" FontWeight="SemiBold"/>
-                          <TextBlock x:Name="GlowOpacityLabel" Text="55%" Foreground="#FFFFFF" FontSize="10" FontWeight="Bold" HorizontalAlignment="Right"/>
+                          <TextBlock x:Name="GlowOpacityLabel" Text="65%" Foreground="#FFFFFF" FontSize="10" FontWeight="Bold" HorizontalAlignment="Right"/>
                         </Grid>
-                        <Slider x:Name="GlowOpacitySlider" Grid.Row="1" Minimum="20" Maximum="90" Value="55" Margin="0,4,0,0" Focusable="False" Cursor="Hand"/>
+                        <Slider x:Name="GlowOpacitySlider" Style="{StaticResource ModernGlowSlider}" Grid.Row="1" Minimum="20" Maximum="95" Value="65" Margin="0,4,0,0"/>
                       </Grid>
                     </Border>
                   </Grid>
 
-                  <!-- Row 2: Tab Modules Visibility Toggles -->
-                  <Grid Grid.Row="2" Margin="0,0,0,10">
+                  <!-- Row 2: Win11 Toggle Switches for Modules -->
+                  <Grid Grid.Row="2">
                     <Grid.RowDefinitions>
                       <RowDefinition Height="Auto"/>
                       <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
-                    <TextBlock Grid.Row="0" Text="NAVIGATION TAB MODULES" Foreground="$($Config.SubtextColor)"
-                               FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="10" FontWeight="Bold" Margin="0,0,0,6"/>
+                    <TextBlock Grid.Row="0" Text="MODULE SWITCHES" Foreground="$($Config.SubtextColor)"
+                               FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="9" FontWeight="Bold" Margin="0,0,0,5"/>
                     <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center">
-                      <Button x:Name="ToggleTabToday" Content="[ON] Today" Width="76" Height="24" Margin="3,0" Style="{StaticResource ToggleModuleButtonStyle}"/>
-                      <Button x:Name="ToggleTabMedia" Content="[ON] Media" Width="76" Height="24" Margin="3,0" Style="{StaticResource ToggleModuleButtonStyle}"/>
-                      <Button x:Name="ToggleTabStats" Content="[ON] Stats" Width="76" Height="24" Margin="3,0" Style="{StaticResource ToggleModuleButtonStyle}"/>
-                      <Button x:Name="ToggleTabControls" Content="[ON] Controls" Width="84" Height="24" Margin="3,0" Style="{StaticResource ToggleModuleButtonStyle}"/>
-                      <Button x:Name="ToggleTabPower" Content="[ON] Power" Width="76" Height="24" Margin="3,0" Style="{StaticResource ToggleModuleButtonStyle}"/>
-                    </StackPanel>
-                  </Grid>
-
-                  <!-- Row 3: Telemetry Ring Modules Toggles -->
-                  <Grid Grid.Row="3">
-                    <Grid.RowDefinitions>
-                      <RowDefinition Height="Auto"/>
-                      <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
-                    <TextBlock Grid.Row="0" Text="TELEMETRY RINGS" Foreground="$($Config.SubtextColor)"
-                               FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="10" FontWeight="Bold" Margin="0,0,0,6"/>
-                    <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center">
-                      <Button x:Name="ToggleRingCpu" Content="[ON] CPU" Width="76" Height="24" Margin="4,0" Style="{StaticResource ToggleModuleButtonStyle}"/>
-                      <Button x:Name="ToggleRingGpu" Content="[ON] GPU" Width="76" Height="24" Margin="4,0" Style="{StaticResource ToggleModuleButtonStyle}"/>
-                      <Button x:Name="ToggleRingRam" Content="[ON] RAM" Width="76" Height="24" Margin="4,0" Style="{StaticResource ToggleModuleButtonStyle}"/>
+                      <CheckBox x:Name="ToggleTabToday" Content="Today" Style="{StaticResource Win11ToggleSwitch}" IsChecked="True" Margin="4,0"/>
+                      <CheckBox x:Name="ToggleTabMedia" Content="Media" Style="{StaticResource Win11ToggleSwitch}" IsChecked="True" Margin="4,0"/>
+                      <CheckBox x:Name="ToggleTabStats" Content="Stats" Style="{StaticResource Win11ToggleSwitch}" IsChecked="True" Margin="4,0"/>
+                      <CheckBox x:Name="ToggleTabControls" Content="Controls" Style="{StaticResource Win11ToggleSwitch}" IsChecked="True" Margin="4,0"/>
+                      <CheckBox x:Name="ToggleTabPower" Content="Power" Style="{StaticResource Win11ToggleSwitch}" IsChecked="True" Margin="4,0"/>
                     </StackPanel>
                   </Grid>
 
@@ -1282,7 +1399,6 @@ function Get-ArcPath ([double]$cx, [double]$cy, [double]$r, [double]$pct) {
             </Grid>
 
           </Grid>
-          <!-- END EXPANDED DASHBOARD VIEW -->
 
         </Grid>
       </Border>
@@ -1333,80 +1449,81 @@ $viewPower       = $window.FindName('ViewPower')
 $viewSettings    = $window.FindName('ViewSettings')
 
 # Tab 1: Today Elements
-$todayClockText  = $window.FindName('TodayClockText')
-$todayDateText   = $window.FindName('TodayDateText')
-$todayGreeting   = $window.FindName('TodayGreeting')
-$todayBattIcon   = $window.FindName('TodayBattIcon')
-$todayBattPct    = $window.FindName('TodayBattPct')
-$todayBattBar    = $window.FindName('TodayBattBar')
-$todayBattStatus = $window.FindName('TodayBattStatus')
-$todayMiniCpu    = $window.FindName('TodayMiniCpu')
-$todayMiniGpu    = $window.FindName('TodayMiniGpu')
-$todayMiniRam    = $window.FindName('TodayMiniRam')
+$todayClockText     = $window.FindName('TodayClockText')
+$todayDateText      = $window.FindName('TodayDateText')
+$todayGreeting      = $window.FindName('TodayGreeting')
+$todayGreetingIcon  = $window.FindName('TodayGreetingIcon')
+$todayBattIcon      = $window.FindName('TodayBattIcon')
+$todayBattPct       = $window.FindName('TodayBattPct')
+$todayBattArcPath   = $window.FindName('TodayBattArcPath')
+$todayBattStatus    = $window.FindName('TodayBattStatus')
+$todayMiniCpu       = $window.FindName('TodayMiniCpu')
+$todayMiniGpu       = $window.FindName('TodayMiniGpu')
+$todayMiniRam       = $window.FindName('TodayMiniRam')
 
 # Tab 2: Media Elements
-$mediaTitleText  = $window.FindName('MediaTitleText')
-$mediaArtistText = $window.FindName('MediaArtistText')
-$mediaWaveLine   = $window.FindName('MediaWaveLine')
-$eqBars          = @(
-    $window.FindName('EqBar1'), $window.FindName('EqBar2'), $window.FindName('EqBar3'),
-    $window.FindName('EqBar4'), $window.FindName('EqBar5'), $window.FindName('EqBar6'), $window.FindName('EqBar7')
-)
-$btnMediaPrev    = $window.FindName('BtnMediaPrev')
-$btnMediaPlay    = $window.FindName('BtnMediaPlay')
-$btnMediaNext    = $window.FindName('BtnMediaNext')
-$mediaVolPct     = $window.FindName('MediaVolPct')
+$albumArtImage      = $window.FindName('AlbumArtImage')
+$albumArtFallback   = $window.FindName('AlbumArtFallback')
+$mediaTitleText     = $window.FindName('MediaTitleText')
+$mediaArtistText    = $window.FindName('MediaArtistText')
+$mediaWaveLine      = $window.FindName('MediaWaveLine')
+$btnMediaPrev       = $window.FindName('BtnMediaPrev')
+$btnMediaPlay       = $window.FindName('BtnMediaPlay')
+$btnMediaNext       = $window.FindName('BtnMediaNext')
+$mediaVolSlider     = $window.FindName('MediaVolSlider')
+$mediaVolPct        = $window.FindName('MediaVolPct')
+$eqBar1             = $window.FindName('EqBar1')
+$eqBar2             = $window.FindName('EqBar2')
+$eqBar3             = $window.FindName('EqBar3')
+$eqBar4             = $window.FindName('EqBar4')
+$eqBar5             = $window.FindName('EqBar5')
+$eqBar6             = $window.FindName('EqBar6')
+$eqBar7             = $window.FindName('EqBar7')
+$eqBar8             = $window.FindName('EqBar8')
+$eqBars             = @($eqBar1, $eqBar2, $eqBar3, $eqBar4, $eqBar5, $eqBar6, $eqBar7, $eqBar8)
 
 # Tab 3: Stats Elements
-$ringPanelCpu    = $window.FindName('RingPanelCpu')
-$ringPanelGpu    = $window.FindName('RingPanelGpu')
-$ringPanelRam    = $window.FindName('RingPanelRam')
-$cpuArcPath      = $window.FindName('CpuArcPath')
-$gpuArcPath      = $window.FindName('GpuArcPath')
-$ramArcPath      = $window.FindName('RamArcPath')
-$cpuPctText      = $window.FindName('CpuPctText')
-$gpuPctText      = $window.FindName('GpuPctText')
-$ramPctText      = $window.FindName('RamPctText')
-$statsSummaryText= $window.FindName('StatsSummaryText')
+$cpuArcPath         = $window.FindName('CpuArcPath')
+$gpuArcPath         = $window.FindName('GpuArcPath')
+$ramArcPath         = $window.FindName('RamArcPath')
+$statsCpuPct        = $window.FindName('StatsCpuPct')
+$statsGpuPct        = $window.FindName('StatsGpuPct')
+$statsRamPct        = $window.FindName('StatsRamPct')
 
 # Tab 4: Controls Elements
-$btnCtrlWifi     = $window.FindName('BtnCtrlWifi')
-$btnCtrlBt       = $window.FindName('BtnCtrlBt')
-$btnCtrlTheme    = $window.FindName('BtnCtrlTheme')
-$btnCtrlTaskMgr  = $window.FindName('BtnCtrlTaskMgr')
-$themeTileIcon   = $window.FindName('ThemeTileIcon')
-$themeTileText   = $window.FindName('ThemeTileText')
-$ctrlVolSlider   = $window.FindName('CtrlVolSlider')
-$ctrlVolLabel    = $window.FindName('CtrlVolLabel')
+$ctrlVolSlider      = $window.FindName('CtrlVolSlider')
+$ctrlVolLabel       = $window.FindName('CtrlVolLabel')
+$btnMuteToggle      = $window.FindName('BtnMuteToggle')
+$btnActionTaskMgr   = $window.FindName('BtnActionTaskMgr')
+$btnActionSettings  = $window.FindName('BtnActionSettings')
+$btnActionExplorer  = $window.FindName('BtnActionExplorer')
 
 # Tab 5: Power Elements
-$btnPowerLock    = $window.FindName('BtnPowerLock')
-$btnPowerSleep   = $window.FindName('BtnPowerSleep')
-$btnPowerRestart = $window.FindName('BtnPowerRestart')
-$btnPowerShutdown= $window.FindName('BtnPowerShutdown')
-$btnExitIsland   = $window.FindName('BtnExitIsland')
+$btnPowerLock       = $window.FindName('BtnPowerLock')
+$btnPowerSleep      = $window.FindName('BtnPowerSleep')
+$btnPowerRestart    = $window.FindName('BtnPowerRestart')
+$btnPowerShutdown   = $window.FindName('BtnPowerShutdown')
 
 # Tab 6: Settings Elements
-$swatchCyan      = $window.FindName('SwatchCyan')
-$swatchMagenta   = $window.FindName('SwatchMagenta')
-$swatchPurple    = $window.FindName('SwatchPurple')
-$swatchEmerald   = $window.FindName('SwatchEmerald')
-$swatchAmber     = $window.FindName('SwatchAmber')
-$swatchRed       = $window.FindName('SwatchRed')
-$glowRadiusSlider= $window.FindName('GlowRadiusSlider')
-$glowRadiusLabel = $window.FindName('GlowRadiusLabel')
-$glowOpacitySlider=$window.FindName('GlowOpacitySlider')
-$glowOpacityLabel =$window.FindName('GlowOpacityLabel')
-$toggleTabToday  = $window.FindName('ToggleTabToday')
-$toggleTabMedia  = $window.FindName('ToggleTabMedia')
-$toggleTabStats  = $window.FindName('ToggleTabStats')
-$toggleTabControls=$window.FindName('ToggleTabControls')
-$toggleTabPower  = $window.FindName('ToggleTabPower')
-$toggleRingCpu   = $window.FindName('ToggleRingCpu')
-$toggleRingGpu   = $window.FindName('ToggleRingGpu')
-$toggleRingRam   = $window.FindName('ToggleRingRam')
+$swatchCyan         = $window.FindName('SwatchCyan')
+$swatchMagenta      = $window.FindName('SwatchMagenta')
+$swatchPurple       = $window.FindName('SwatchPurple')
+$swatchEmerald      = $window.FindName('SwatchEmerald')
+$swatchAmber        = $window.FindName('SwatchAmber')
+$swatchRed          = $window.FindName('SwatchRed')
+$customHexInput     = $window.FindName('CustomHexInput')
+$btnApplyHex        = $window.FindName('BtnApplyHex')
+$glowRadiusSlider   = $window.FindName('GlowRadiusSlider')
+$glowRadiusLabel    = $window.FindName('GlowRadiusLabel')
+$glowOpacitySlider  = $window.FindName('GlowOpacitySlider')
+$glowOpacityLabel   = $window.FindName('GlowOpacityLabel')
+$toggleTabToday     = $window.FindName('ToggleTabToday')
+$toggleTabMedia     = $window.FindName('ToggleTabMedia')
+$toggleTabStats     = $window.FindName('ToggleTabStats')
+$toggleTabControls  = $window.FindName('ToggleTabControls')
+$toggleTabPower     = $window.FindName('ToggleTabPower')
 
-# Runtime States
+# Script State Variables
 $script:expanded       = $false
 $script:pinned         = $false
 $script:isDragging     = $false
@@ -1415,14 +1532,15 @@ $script:pct            = 0
 $script:charging       = $false
 $script:tick           = 0
 $script:mediaAutoShown = $false
-$script:wavePhase      = 0.0
-$script:totalRamGB     = [SysMem]::GetTotalPhysicalGB()
+$script:lastMediaTitle = ''
+$script:currentArtBytes= $null
+$script:waveOffset     = 0.0
 
-# Pre-compiled Brushes
-$bc = [System.Windows.Media.BrushConverter]::new()
+# Solid Brushes Cache
+$bc = New-Object System.Windows.Media.BrushConverter
 $script:brushWhite       = [System.Windows.Media.Brushes]::White
-$script:brushSub         = $bc.ConvertFromString($Config.SubtextColor); $script:brushSub.Freeze()
 $script:brushGreen       = $bc.ConvertFromString($Config.AccentGreen);  $script:brushGreen.Freeze()
+$script:brushWarn        = $bc.ConvertFromString($Config.WarnColor);    $script:brushWarn.Freeze()
 $script:brushRed         = $bc.ConvertFromString($Config.CritColor);    $script:brushRed.Freeze()
 $script:brushInactiveTab = [System.Windows.Media.Brushes]::Transparent
 
@@ -1431,12 +1549,14 @@ $script:colorCrit        = [System.Windows.Media.ColorConverter]::ConvertFromStr
 
 # Dynamic Aura Theme Applicator
 function Apply-AuraTheme ([string]$hexColor) {
+    if ($hexColor -notmatch '^#[0-9A-Fa-f]{6}$') { return }
     $Config.GlowColor = $hexColor
 
     $colorObj = [System.Windows.Media.ColorConverter]::ConvertFromString($hexColor)
     $glowFx.Color = $colorObj
     $statusDot.Fill = [System.Windows.Media.SolidColorBrush]::new($colorObj)
     $compactIcon.Foreground = [System.Windows.Media.SolidColorBrush]::new($colorObj)
+
     if ($null -ne $menuResetIcon) {
         $menuResetIcon.Foreground = [System.Windows.Media.SolidColorBrush]::new($colorObj)
     }
@@ -1449,6 +1569,9 @@ function Apply-AuraTheme ([string]$hexColor) {
 
     $btnMediaPlay.Background  = $script:brushAccentSolid
     $cpuArcPath.Stroke        = $script:brushAccentSolid
+    $todayMiniCpu.Foreground  = $script:brushAccentSolid
+    $todayGreeting.Foreground = $script:brushAccentSolid
+    $todayGreetingIcon.Foreground = $script:brushAccentSolid
     foreach ($b in $eqBars) { $b.Background = $script:brushAccentSolid }
 
     # Refresh current active tab pill style
@@ -1466,13 +1589,6 @@ if ($null -ne $Config.X -and $null -ne $Config.Y) {
     $window.Left = ([System.Windows.SystemParameters]::PrimaryScreenWidth - $window.Width) / 2
     $window.Top  = 0
 }
-
-# Hidden from Alt-Tab
-$window.Add_SourceInitialized({
-    $h = (New-Object System.Windows.Interop.WindowInteropHelper $window).Handle
-    $s = [IslandNative]::GetWindowLong($h, -20)
-    [IslandNative]::SetWindowLong($h, -20, ($s -bor 0x80)) | Out-Null
-})
 
 # ------------------------------------------------------------------------------
 #  S6  ZERO-LAG ANIMATION SYSTEM (Hardware Accelerated)
@@ -1539,32 +1655,34 @@ $script:allTabs = @{
     'Stats'    = @{ Btn = $tabBtnStats;    View = $viewStats    }
     'Controls' = @{ Btn = $tabBtnControls; View = $viewControls }
     'Power'    = @{ Btn = $tabBtnPower;    View = $viewPower    }
+    'Settings' = @{ Btn = $btnSettings;    View = $viewSettings }
 }
 
 function Switch-Tab ([string]$tabName) {
     if (-not $script:allTabs.ContainsKey($tabName)) { return }
     $script:activeTab = $tabName
-    $viewSettings.Visibility = 'Collapsed'
-    $btnSettings.Foreground  = $script:brushSub
 
-    foreach ($key in $script:allTabs.Keys) {
-        $item = $script:allTabs[$key]
-        if ($key -eq $tabName) {
-            # Active Cylindrical Pill Highlight
-            $item.Btn.Background      = $script:brushActiveTab
-            $item.Btn.BorderBrush     = $script:brushAccentBorder
-            $item.Btn.BorderThickness = New-Object System.Windows.Thickness(1)
-            $item.Btn.Foreground      = $script:brushWhite
-            $item.View.Visibility     = 'Visible'
-
-            $a = New-Object System.Windows.Media.Animation.DoubleAnimation(1.0, [TimeSpan]::FromMilliseconds(160))
-            $item.View.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $a)
+    foreach ($k in $script:allTabs.Keys) {
+        $entry = $script:allTabs[$k]
+        if ($k -eq $tabName) {
+            $entry.View.Visibility = 'Visible'
+            if ($k -ne 'Settings') {
+                $entry.Btn.Background      = $script:brushActiveTab
+                $entry.Btn.Foreground      = $script:brushAccentSolid
+                $entry.Btn.BorderThickness = [System.Windows.Thickness]::new(1)
+                $entry.Btn.BorderBrush     = $script:brushAccentBorder
+            } else {
+                $entry.Btn.Foreground      = $script:brushAccentSolid
+            }
         } else {
-            # Inactive Pill
-            $item.Btn.Background      = $script:brushInactiveTab
-            $item.Btn.BorderThickness = New-Object System.Windows.Thickness(0)
-            $item.Btn.Foreground      = $script:brushSub
-            $item.View.Visibility     = 'Collapsed'
+            $entry.View.Visibility = 'Collapsed'
+            if ($k -ne 'Settings') {
+                $entry.Btn.Background      = $script:brushInactiveTab
+                $entry.Btn.Foreground      = $bc.ConvertFromString($Config.SubtextColor)
+                $entry.Btn.BorderThickness = [System.Windows.Thickness]::new(0)
+            } else {
+                $entry.Btn.Foreground      = $bc.ConvertFromString($Config.SubtextColor)
+            }
         }
     }
 }
@@ -1574,51 +1692,48 @@ $tabBtnMedia.Add_Click({ Switch-Tab 'Media' })
 $tabBtnStats.Add_Click({ Switch-Tab 'Stats' })
 $tabBtnControls.Add_Click({ Switch-Tab 'Controls' })
 $tabBtnPower.Add_Click({ Switch-Tab 'Power' })
-
-# Settings / Customization View Toggle
 $btnSettings.Add_Click({
-    if ($viewSettings.Visibility -eq 'Visible') {
-        Switch-Tab $script:activeTab
-    } else {
-        foreach ($k in $script:allTabs.Keys) {
-            $script:allTabs[$k].View.Visibility = 'Collapsed'
-            $script:allTabs[$k].Btn.Background  = $script:brushInactiveTab
-            $script:allTabs[$k].Btn.Foreground  = $script:brushSub
-            $script:allTabs[$k].Btn.BorderThickness = New-Object System.Windows.Thickness(0)
-        }
-        $viewSettings.Visibility = 'Visible'
-        $btnSettings.Foreground  = $script:brushAccentSolid
-        $a = New-Object System.Windows.Media.Animation.DoubleAnimation(1.0, [TimeSpan]::FromMilliseconds(160))
-        $viewSettings.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $a)
-    }
+    if ($script:activeTab -eq 'Settings') { Switch-Tab 'Today' }
+    else { Switch-Tab 'Settings' }
 })
 
-# Pin Button Toggle
+# Pin Open Toggle
 $btnPin.Add_Click({
     $script:pinned = -not $script:pinned
-    if ($script:pinned) {
-        $btnPin.Foreground = $script:brushAccentSolid
-        $btnPin.Content    = [char]0xE840
-    } else {
-        $btnPin.Foreground = $script:brushSub
-        $btnPin.Content    = [char]0xE718
-    }
+    $btnPin.Foreground = if ($script:pinned) { $script:brushAccentSolid } else { $bc.ConvertFromString($Config.SubtextColor) }
 })
 
 # ------------------------------------------------------------------------------
-#  S8  CUSTOMIZATION EVENT HANDLERS (Aura Presets & Module Toggles)
+#  S8  CUSTOMIZATION & SETTINGS EVENT HANDLERS
 # ------------------------------------------------------------------------------
-# 1. Swatches
-$swatchCyan.Add_Click({    Apply-AuraTheme '#00E5FF' })
+# Aura Preset Swatches
+$swatchCyan.Add_Click({ Apply-AuraTheme '#00E5FF' })
 $swatchMagenta.Add_Click({ Apply-AuraTheme '#FF007F' })
-$swatchPurple.Add_Click({  Apply-AuraTheme '#A855F7' })
-$swatchEmerald.Add_Click({ Apply-AuraTheme '#10B981' })
-$swatchAmber.Add_Click({   Apply-AuraTheme '#FF9100' })
-$swatchRed.Add_Click({     Apply-AuraTheme '#FF1744' })
+$swatchPurple.Add_Click({ Apply-AuraTheme '#A855F7' })
+$swatchEmerald.Add_Click({ Apply-AuraTheme '#00E676' })
+$swatchAmber.Add_Click({ Apply-AuraTheme '#FFB300' })
+$swatchRed.Add_Click({ Apply-AuraTheme '#FF1744' })
 
-# 2. Glow Sliders
+# Custom Hex Input Handler
+$btnApplyHex.Add_Click({
+    $hex = $customHexInput.Text.Trim()
+    if ($hex -match '^#[0-9A-Fa-f]{6}$') {
+        Apply-AuraTheme $hex
+    }
+})
+$customHexInput.Add_KeyDown({
+    param($s, $e)
+    if ($e.Key -eq 'Return') {
+        $hex = $customHexInput.Text.Trim()
+        if ($hex -match '^#[0-9A-Fa-f]{6}$') {
+            Apply-AuraTheme $hex
+        }
+    }
+})
+
+# Glow Radius & Opacity Sliders
 $glowRadiusSlider.Value = $Config.GlowRadius
-$glowRadiusLabel.Text   = "$($Config.GlowRadius)px"
+$glowRadiusLabel.Text = "$($Config.GlowRadius)px"
 $glowRadiusSlider.Add_ValueChanged({
     $val = [int]$glowRadiusSlider.Value
     $Config.GlowRadius    = $val
@@ -1628,7 +1743,7 @@ $glowRadiusSlider.Add_ValueChanged({
 })
 
 $glowOpacitySlider.Value = [int]($Config.GlowOpacity * 100)
-$glowOpacityLabel.Text   = "$([int]($Config.GlowOpacity * 100))%"
+$glowOpacityLabel.Text = "$([int]($Config.GlowOpacity * 100))%"
 $glowOpacitySlider.Add_ValueChanged({
     $val = [int]$glowOpacitySlider.Value
     $dec = $val / 100.0
@@ -1638,67 +1753,18 @@ $glowOpacitySlider.Add_ValueChanged({
     Save-Config
 })
 
-# 3. Tab Visibility Toggles
-function Sync-TabToggles {
-    $tabBtnToday.Visibility    = if ($Config.Tabs.Today)    { 'Visible' } else { 'Collapsed' }
-    $tabBtnMedia.Visibility    = if ($Config.Tabs.Media)    { 'Visible' } else { 'Collapsed' }
-    $tabBtnStats.Visibility    = if ($Config.Tabs.Stats)    { 'Visible' } else { 'Collapsed' }
-    $tabBtnControls.Visibility = if ($Config.Tabs.Controls) { 'Visible' } else { 'Collapsed' }
-    $tabBtnPower.Visibility    = if ($Config.Tabs.Power)    { 'Visible' } else { 'Collapsed' }
+# Win11 Module Switches
+$toggleTabToday.IsChecked    = $Config.Tabs.Today
+$toggleTabMedia.IsChecked    = $Config.Tabs.Media
+$toggleTabStats.IsChecked    = $Config.Tabs.Stats
+$toggleTabControls.IsChecked = $Config.Tabs.Controls
+$toggleTabPower.IsChecked    = $Config.Tabs.Power
 
-    $toggleTabToday.Content    = if ($Config.Tabs.Today)    { '[ON] Today' } else { '[OFF] Today' }
-    $toggleTabMedia.Content    = if ($Config.Tabs.Media)    { '[ON] Media' } else { '[OFF] Media' }
-    $toggleTabStats.Content    = if ($Config.Tabs.Stats)    { '[ON] Stats' } else { '[OFF] Stats' }
-    $toggleTabControls.Content = if ($Config.Tabs.Controls) { '[ON] Controls' } else { '[OFF] Controls' }
-    $toggleTabPower.Content    = if ($Config.Tabs.Power)    { '[ON] Power' } else { '[OFF] Power' }
-}
-Sync-TabToggles
-
-$toggleTabToday.Add_Click({
-    $Config.Tabs.Today = -not $Config.Tabs.Today
-    Sync-TabToggles; Save-Config
-})
-$toggleTabMedia.Add_Click({
-    $Config.Tabs.Media = -not $Config.Tabs.Media
-    Sync-TabToggles; Save-Config
-})
-$toggleTabStats.Add_Click({
-    $Config.Tabs.Stats = -not $Config.Tabs.Stats
-    Sync-TabToggles; Save-Config
-})
-$toggleTabControls.Add_Click({
-    $Config.Tabs.Controls = -not $Config.Tabs.Controls
-    Sync-TabToggles; Save-Config
-})
-$toggleTabPower.Add_Click({
-    $Config.Tabs.Power = -not $Config.Tabs.Power
-    Sync-TabToggles; Save-Config
-})
-
-# 4. Ring Modules Toggles
-function Sync-RingToggles {
-    $ringPanelCpu.Visibility = if ($Config.StatsModules.Cpu) { 'Visible' } else { 'Collapsed' }
-    $ringPanelGpu.Visibility = if ($Config.StatsModules.Gpu) { 'Visible' } else { 'Collapsed' }
-    $ringPanelRam.Visibility = if ($Config.StatsModules.Ram) { 'Visible' } else { 'Collapsed' }
-
-    $toggleRingCpu.Content = if ($Config.StatsModules.Cpu) { '[ON] CPU' } else { '[OFF] CPU' }
-    $toggleRingGpu.Content = if ($Config.StatsModules.Gpu) { '[ON] GPU' } else { '[OFF] GPU' }
-    $toggleRingRam.Content = if ($Config.StatsModules.Ram) { '[ON] RAM' } else { '[OFF] RAM' }
-}
-Sync-RingToggles
-
-$toggleRingCpu.Add_Click({
-    $Config.StatsModules.Cpu = -not $Config.StatsModules.Cpu
-    Sync-RingToggles; Save-Config
-})
-$toggleRingGpu.Add_Click({
-    $Config.StatsModules.Gpu = -not $Config.StatsModules.Gpu
-    Sync-RingToggles; Save-Config
-})
-$toggleRingRam.Add_Click({
-    $Config.StatsModules.Ram = -not $Config.StatsModules.Ram
-    Sync-RingToggles; Save-Config
-})
+$toggleTabToday.Add_Click({ $Config.Tabs.Today = [bool]$toggleTabToday.IsChecked; $tabBtnToday.Visibility = if ($Config.Tabs.Today) { 'Visible' } else { 'Collapsed' }; Save-Config })
+$toggleTabMedia.Add_Click({ $Config.Tabs.Media = [bool]$toggleTabMedia.IsChecked; $tabBtnMedia.Visibility = if ($Config.Tabs.Media) { 'Visible' } else { 'Collapsed' }; Save-Config })
+$toggleTabStats.Add_Click({ $Config.Tabs.Stats = [bool]$toggleTabStats.IsChecked; $tabBtnStats.Visibility = if ($Config.Tabs.Stats) { 'Visible' } else { 'Collapsed' }; Save-Config })
+$toggleTabControls.Add_Click({ $Config.Tabs.Controls = [bool]$toggleTabControls.IsChecked; $tabBtnControls.Visibility = if ($Config.Tabs.Controls) { 'Visible' } else { 'Collapsed' }; Save-Config })
+$toggleTabPower.Add_Click({ $Config.Tabs.Power = [bool]$toggleTabPower.IsChecked; $tabBtnPower.Visibility = if ($Config.Tabs.Power) { 'Visible' } else { 'Collapsed' }; Save-Config })
 
 # ------------------------------------------------------------------------------
 #  S9  FAST UI DISPATCHER UPDATES (Reads from Shared State)
@@ -1712,9 +1778,27 @@ function Update-ClockAndBattery {
     $todayClockText.Text = $timeStr
     $todayDateText.Text  = $dateStr
 
+    # Smart Greeting & Icon
     $hr = $now.Hour
-    $todayGreeting.Text  = if ($hr -lt 12) { 'Good Morning' } elseif ($hr -lt 18) { 'Good Afternoon' } else { 'Good Evening' }
+    $greeting = 'Good Evening'
+    $greetIcon = [char]0xE708
+    if ($hr -ge 5 -and $hr -lt 12) {
+        $greeting = 'Good Morning'
+        $greetIcon = [char]0xE706
+    } elseif ($hr -ge 12 -and $hr -lt 17) {
+        $greeting = 'Good Afternoon'
+        $greetIcon = [char]0xE706
+    } elseif ($hr -ge 17 -and $hr -lt 21) {
+        $greeting = 'Good Evening'
+        $greetIcon = [char]0xE708
+    } else {
+        $greeting = 'Good Night'
+        $greetIcon = [char]0xE705
+    }
+    $todayGreeting.Text = $greeting
+    $todayGreetingIcon.Text = [string]$greetIcon
 
+    # Battery Telemetry
     $ps = [System.Windows.Forms.SystemInformation]::PowerStatus
     $script:pct = [int][math]::Round($ps.BatteryLifePercent * 100)
     $script:charging = ($ps.PowerLineStatus -eq 'Online')
@@ -1725,27 +1809,33 @@ function Update-ClockAndBattery {
 
     $todayBattIcon.Text   = [string]$battGlyph
     $todayBattPct.Text    = "$($script:pct)%"
-    $todayBattStatus.Text = if ($script:charging) { 'AC Connected  |  Charging' } else { 'Battery  |  Discharging' }
-    $todayBattBar.Width   = [math]::Max(4, [int](($script:pct / 100.0) * 150))
+    $todayBattStatus.Text = if ($script:charging) { 'AC Connected | Charging' } else { 'Battery | Discharging' }
 
-    if ($script:pct -le 20 -and -not $script:charging) {
-        $compactBattIcon.Foreground = $script:brushRed
-        $todayBattBar.Background    = $script:brushRed
-    } else {
+    # Dynamic Radial Arc for Battery (cx=35, cy=35, r=29)
+    $todayBattArcPath.Data = [System.Windows.Media.Geometry]::Parse((Get-ArcPath 35 35 29 $script:pct))
+
+    # Dynamic Arc Stroke Colors
+    if ($script:charging -or $script:pct -ge 80) {
+        $todayBattArcPath.Stroke = $script:brushGreen
+        $todayBattIcon.Foreground = $script:brushGreen
         $compactBattIcon.Foreground = $script:brushGreen
-        $todayBattBar.Background    = $script:brushGreen
+    } elseif ($script:pct -ge 20) {
+        $todayBattArcPath.Stroke = $script:brushWarn
+        $todayBattIcon.Foreground = $script:brushWarn
+        $compactBattIcon.Foreground = $script:brushWarn
+    } else {
+        $todayBattArcPath.Stroke = $script:brushRed
+        $todayBattIcon.Foreground = $script:brushRed
+        $compactBattIcon.Foreground = $script:brushRed
     }
 }
 
-function Update-UIFromBackgroundState {
-    # 1. Telemetry
+function Update-UIState {
+    # 1. Telemetry Gauges (Read from background runspace)
     $cpu = $script:sharedState.Cpu
     $gpu = $script:sharedState.Gpu
     $ram = $script:sharedState.Ram
 
-    $cpuPctText.Text   = "${cpu}%"
-    $gpuPctText.Text   = "${gpu}%"
-    $ramPctText.Text   = "${ram}%"
     $todayMiniCpu.Text = "${cpu}%"
     $todayMiniGpu.Text = "${gpu}%"
     $todayMiniRam.Text = "${ram}%"
@@ -1756,13 +1846,15 @@ function Update-UIFromBackgroundState {
     $gpuArcPath.Data = [System.Windows.Media.Geometry]::Parse((Get-ArcPath 36 36 30 $gpu))
     $ramArcPath.Data = [System.Windows.Media.Geometry]::Parse((Get-ArcPath 36 36 30 $ram))
 
-    $statsSummaryText.Text = "CPU: ${cpu}%  |  GPU: ${gpu}%  |  RAM: ${ram}% of $($script:totalRamGB) GB"
+    $statsCpuPct.Text = "${cpu}%"
+    $statsGpuPct.Text = "${gpu}%"
+    $statsRamPct.Text = "${ram}%"
 
-    # Dynamic Load/Thermal Reactive Glow
+    # Dynamic Load Aura Warning (>78% Warn, >88% Critical)
     if ($Config.EnableDynamicGlow) {
-        $peak = [math]::Max($cpu, $gpu)
-        $targetColor = if ($peak -ge 92)     { $script:colorCrit }
-                       elseif ($peak -ge 78) { $script:colorWarn }
+        $maxLoad = [math]::Max($cpu, $gpu)
+        $targetColor = if ($maxLoad -ge 88) { $script:colorCrit }
+                       elseif ($maxLoad -ge 78) { $script:colorWarn }
                        else                  { [System.Windows.Media.ColorConverter]::ConvertFromString($Config.GlowColor) }
 
         if ($glowFx.Color -ne $targetColor) {
@@ -1771,7 +1863,7 @@ function Update-UIFromBackgroundState {
         }
     }
 
-    # 2. Media Info
+    # 2. Media Info & Live Album Art
     $title  = $script:sharedState.MediaTitle
     $artist = $script:sharedState.MediaArtist
     $status = $script:sharedState.MediaStatus
@@ -1790,99 +1882,133 @@ function Update-UIFromBackgroundState {
         # Auto-popup on track change
         if ($title -ne $script:lastMediaTitle -and $title -ne '' -and -not $script:expanded) {
             $script:lastMediaTitle = $title
-            if (-not $script:mediaAutoShown) {
-                $script:mediaAutoShown = $true
-                Switch-Tab 'Media'
-                Expand-Island
-                $script:autoCollapseTimer.Interval = [TimeSpan]::FromMilliseconds($Config.MediaPopupMs)
-                $script:autoCollapseTimer.Start()
-            }
+            $script:mediaAutoShown = $true
+            Switch-Tab 'Media'
+            Expand-Island
+            $script:autoCollapseTimer.Stop()
+            $script:autoCollapseTimer.Start()
         }
     }
-    $script:lastMediaTitle = $title
+
+    # Live Decoded Album Art Image Injection
+    $artBytes = $script:sharedState.AlbumArtBytes
+    if ($null -ne $artBytes -and $artBytes.Length -gt 0) {
+        if ($artBytes -ne $script:currentArtBytes) {
+            $script:currentArtBytes = $artBytes
+            try {
+                $ms = New-Object System.IO.MemoryStream(@(,$artBytes))
+                $bi = New-Object System.Windows.Media.Imaging.BitmapImage
+                $bi.BeginInit()
+                $bi.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
+                $bi.StreamSource = $ms
+                $bi.EndInit()
+                $bi.Freeze()
+                $albumArtImage.Source = $bi
+                $albumArtImage.Visibility = 'Visible'
+                $albumArtFallback.Visibility = 'Collapsed'
+            } catch {
+                $albumArtImage.Source = $null
+                $albumArtImage.Visibility = 'Collapsed'
+                $albumArtFallback.Visibility = 'Visible'
+            }
+        }
+    } else {
+        if ($null -ne $script:currentArtBytes) {
+            $script:currentArtBytes = $null
+            $albumArtImage.Source = $null
+            $albumArtImage.Visibility = 'Collapsed'
+            $albumArtFallback.Visibility = 'Visible'
+        }
+    }
 }
 
 # ------------------------------------------------------------------------------
-#  S10  60 FPS AUDIO EQUALIZER (High-Speed Lightweight Animation)
+#  S10  60 FPS 8-BAR AUDIO EQUALIZER ANIMATION LOOP
 # ------------------------------------------------------------------------------
+$script:rnd = New-Object System.Random
+
 $waveTimer = New-Object System.Windows.Threading.DispatcherTimer
-$waveTimer.Interval = [TimeSpan]::FromMilliseconds(35)
+$waveTimer.Interval = [TimeSpan]::FromMilliseconds(16)
 $waveTimer.Add_Tick({
-    if ($script:sharedState.MediaStatus -eq 'Playing') {
-        $script:wavePhase += 0.28
+    $isPlaying = ($script:sharedState.MediaStatus -eq 'Playing')
 
-        $eqBars[0].Height = 4 + [int](14 * [math]::Abs([math]::Sin($script:wavePhase * 1.1)))
-        $eqBars[1].Height = 4 + [int](18 * [math]::Abs([math]::Cos($script:wavePhase * 0.9 + 0.4)))
-        $eqBars[2].Height = 4 + [int](20 * [math]::Abs([math]::Sin($script:wavePhase * 1.4 + 1.2)))
-        $eqBars[3].Height = 5 + [int](22 * [math]::Abs([math]::Cos($script:wavePhase * 1.3 + 2.0)))
-        $eqBars[4].Height = 4 + [int](18 * [math]::Abs([math]::Sin($script:wavePhase * 0.8 + 0.7)))
-        $eqBars[5].Height = 4 + [int](16 * [math]::Abs([math]::Cos($script:wavePhase * 1.2 + 1.5)))
-        $eqBars[6].Height = 4 + [int](13 * [math]::Abs([math]::Sin($script:wavePhase * 1.5 + 2.3)))
-
-        $p1 = 13 + [int](8 * [math]::Sin($script:wavePhase * 1.2))
-        $p2 = 13 - [int](9 * [math]::Cos($script:wavePhase * 1.4))
-        $p3 = 13 + [int](7 * [math]::Sin($script:wavePhase * 0.9))
-        $mediaWaveLine.Data = [System.Windows.Media.Geometry]::Parse("M 0,13 Q 30,$p1 60,13 T 120,13 T 180,$p2 T 240,13 T 300,$p3")
+    # Animate 8 Equalizer Bars
+    if ($isPlaying) {
+        for ($i = 0; $i -lt 8; $i++) {
+            $targetH = $script:rnd.Next(4, 20)
+            $curH = $eqBars[$i].Height
+            $eqBars[$i].Height = $curH + (($targetH - $curH) * 0.35)
+        }
     } else {
-        foreach ($b in $eqBars) { if ($b.Height -gt 4) { $b.Height = [math]::Max(4, $b.Height - 1) } }
-        $mediaWaveLine.Data = [System.Windows.Media.Geometry]::Parse("M 0,13 L 280,13")
+        # Smoothly reset to baseline when paused/idle
+        for ($i = 0; $i -lt 8; $i++) {
+            $curH = $eqBars[$i].Height
+            if ($curH -gt 4.0) { $eqBars[$i].Height = $curH * 0.8 }
+            else { $eqBars[$i].Height = 4.0 }
+        }
     }
+
+    # Audio Waveform Line
+    $script:waveOffset += if ($isPlaying) { 0.18 } else { 0.03 }
+    $w = 200; $h = 18; $mid = $h / 2
+    $amp = if ($isPlaying) { 6.0 } else { 1.5 }
+    $sb = New-Object System.Text.StringBuilder
+    [void]$sb.Append("M 0,$mid")
+    for ($x = 5; $x -le $w; $x += 10) {
+        $y = $mid + ($amp * [math]::Sin(($x * 0.05) + $script:waveOffset))
+        [void]$sb.Append(" L $x,$([math]::Round($y, 1))")
+    }
+    $mediaWaveLine.Data = [System.Windows.Media.Geometry]::Parse($sb.ToString())
 })
 
 # ------------------------------------------------------------------------------
 #  S11  QUICK CONTROLS & VOLUME
 # ------------------------------------------------------------------------------
 function Sync-VolumeUI {
-    $vol = [int][math]::Round([AudioMasterSafe]::GetVolume())
+    $vol = [AudioMasterSafe]::GetVolume()
+    $isMute = [AudioMasterSafe]::GetMute()
+
     $ctrlVolSlider.Value = $vol
-    $ctrlVolLabel.Text   = "${vol}%"
-    $mediaVolPct.Text    = "${vol}%"
+    $mediaVolSlider.Value = $vol
+    $ctrlVolLabel.Text = "$([int]$vol)%"
+    $mediaVolPct.Text  = "$([int]$vol)%"
+    $btnMuteToggle.Content = if ($isMute) { 'Unmute' } else { 'Mute' }
 }
 
 $ctrlVolSlider.Add_ValueChanged({
-    $v = [float]$ctrlVolSlider.Value
-    [AudioMasterSafe]::SetVolume($v)
-    $intV = [int][math]::Round($v)
-    $ctrlVolLabel.Text = "${intV}%"
-    $mediaVolPct.Text  = "${intV}%"
+    [AudioMasterSafe]::SetVolume($ctrlVolSlider.Value)
+    $mediaVolSlider.Value = $ctrlVolSlider.Value
+    $ctrlVolLabel.Text = "$([int]$ctrlVolSlider.Value)%"
+    $mediaVolPct.Text  = "$([int]$ctrlVolSlider.Value)%"
 })
 
-function Update-ThemeButtonText {
-    $reg = Get-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" -Name "AppsUseLightTheme" -ErrorAction SilentlyContinue
-    $isLight = ($null -ne $reg -and $reg.AppsUseLightTheme -eq 1)
-    if ($isLight) {
-        $themeTileIcon.Text = [string][char]0xE706
-        $themeTileText.Text = 'Light Mode'
-    } else {
-        $themeTileIcon.Text = [string][char]0xE708
-        $themeTileText.Text = 'Dark Mode'
-    }
-}
-Update-ThemeButtonText
-
-$btnCtrlTheme.Add_Click({
-    $regPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
-    $reg = Get-ItemProperty -Path $regPath -Name "AppsUseLightTheme" -ErrorAction SilentlyContinue
-    $cur = if ($null -ne $reg) { $reg.AppsUseLightTheme } else { 0 }
-    $newVal = if ($cur -eq 1) { 0 } else { 1 }
-    Set-ItemProperty -Path $regPath -Name "AppsUseLightTheme" -Value $newVal -ErrorAction SilentlyContinue
-    Set-ItemProperty -Path $regPath -Name "SystemUsesLightTheme" -Value $newVal -ErrorAction SilentlyContinue
-    Update-ThemeButtonText
+$mediaVolSlider.Add_ValueChanged({
+    [AudioMasterSafe]::SetVolume($mediaVolSlider.Value)
+    $ctrlVolSlider.Value = $mediaVolSlider.Value
+    $ctrlVolLabel.Text = "$([int]$mediaVolSlider.Value)%"
+    $mediaVolPct.Text  = "$([int]$mediaVolSlider.Value)%"
 })
 
-$btnCtrlWifi.Add_Click({ Start-Process "ms-settings:network-wifi" })
-$btnCtrlBt.Add_Click({   Start-Process "ms-settings:bluetooth" })
-$btnCtrlTaskMgr.Add_Click({ Start-Process "taskmgr.exe" })
+$btnMuteToggle.Add_Click({
+    [AudioMasterSafe]::ToggleMute()
+    Sync-VolumeUI
+})
 
-$btnPowerLock.Add_Click({     [IslandNative]::LockWorkStation() | Out-Null })
-$btnPowerSleep.Add_Click({    [IslandNative]::SetSuspendState($false, $false, $false) | Out-Null })
-$btnPowerRestart.Add_Click({  Start-Process "shutdown.exe" -ArgumentList "/r /t 0" })
-$btnPowerShutdown.Add_Click({ Start-Process "shutdown.exe" -ArgumentList "/s /t 0" })
-$btnExitIsland.Add_Click({    $window.Close() })
+# Media Buttons
+$btnMediaPlay.Add_Click({ Send-MediaCommandAsync 'PlayPause' })
+$btnMediaPrev.Add_Click({ Send-MediaCommandAsync 'Previous' })
+$btnMediaNext.Add_Click({ Send-MediaCommandAsync 'Next' })
 
-$btnMediaPrev.Add_Click({ Send-MediaCommand 'Previous' })
-$btnMediaPlay.Add_Click({ Send-MediaCommand 'PlayPause' })
-$btnMediaNext.Add_Click({ Send-MediaCommand 'Next' })
+# Quick App Actions
+$btnActionTaskMgr.Add_Click({ Start-Process taskmgr.exe })
+$btnActionSettings.Add_Click({ Start-Process 'ms-settings:' })
+$btnActionExplorer.Add_Click({ Start-Process explorer.exe })
+
+# Power Actions
+$btnPowerLock.Add_Click({ Start-Process rundll32.exe 'user32.dll,LockWorkStation' })
+$btnPowerSleep.Add_Click({ Start-Process rundll32.exe 'powrprof.dll,SetSuspendState 0,1,0' })
+$btnPowerRestart.Add_Click({ Start-Process shutdown.exe '/r /t 0' })
+$btnPowerShutdown.Add_Click({ Start-Process shutdown.exe '/s /t 0' })
 
 # ------------------------------------------------------------------------------
 #  S12  EVENT TRIGGERS: HOVER, FREE DRAG & VOLUME SCROLL
@@ -1907,7 +2033,9 @@ $glowBorder.Add_MouseLeftButtonDown({
     param($sender, $e)
     if ($e.OriginalSource -isnot [System.Windows.Controls.Button] -and
         $e.OriginalSource -isnot [System.Windows.Controls.Slider] -and
-        $e.OriginalSource -isnot [System.Windows.Controls.Primitives.Thumb]) {
+        $e.OriginalSource -isnot [System.Windows.Controls.Primitives.Thumb] -and
+        $e.OriginalSource -isnot [System.Windows.Controls.TextBox] -and
+        $e.OriginalSource -isnot [System.Windows.Controls.CheckBox]) {
         $script:isDragging = $true
         $window.DragMove()
         $script:isDragging = $false
@@ -1968,30 +2096,34 @@ $window.Add_Closed({
 })
 
 # ------------------------------------------------------------------------------
-#  S13  UI TIMERS & LAUNCH
+#  S13  UI DISPATCHER TIMERS & LAUNCH
 # ------------------------------------------------------------------------------
+Update-ClockAndBattery
+Sync-VolumeUI
+Switch-Tab 'Today'
+
+# High-frequency UI Dispatcher Timer (Reads synchronized telemetry)
+$uiTimer = New-Object System.Windows.Threading.DispatcherTimer
+$uiTimer.Interval = [TimeSpan]::FromMilliseconds(80)
+$uiTimer.Add_Tick({ Update-UIState })
+
+# 1-Second Clock Timer
 $clockTimer = New-Object System.Windows.Threading.DispatcherTimer
 $clockTimer.Interval = [TimeSpan]::FromSeconds(1)
 $clockTimer.Add_Tick({
     $script:tick++
     if ($script:tick % 30 -eq 0) { Update-ClockAndBattery }
     else {
-        $compactTime.Text    = (Get-Date).ToString('h:mm tt')
-        $todayClockText.Text = (Get-Date).ToString('h:mm tt')
+        $now = Get-Date
+        $t = $now.ToString('h:mm tt')
+        $compactTime.Text    = $t
+        $todayClockText.Text = $t
     }
 })
 
-$uiTimer = New-Object System.Windows.Threading.DispatcherTimer
-$uiTimer.Interval = [TimeSpan]::FromMilliseconds(400)
-$uiTimer.Add_Tick({ Update-UIFromBackgroundState })
-
-# Initial paint
-Update-ClockAndBattery
-Update-UIFromBackgroundState
-Sync-VolumeUI
-
-$clockTimer.Start()
 $uiTimer.Start()
+$clockTimer.Start()
 $waveTimer.Start()
 
+# Show Window
 $window.ShowDialog() | Out-Null
