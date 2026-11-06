@@ -1,6 +1,6 @@
 # ==============================================================================
-#  Dynamic Island for Windows  -  v0 Definitive Edition
-#  Executive Glass HUD | Zero-Lag Threading | Content-Fit Dynamic Height
+#  Dynamic Island for Windows  -  v0 Ultimate Edition
+#  Executive Glass HUD | NotchPixel Suite | Acrylic Blur | Zero-Lag Telemetry
 # ==============================================================================
 
 # Global Error Suppression (Zero Red Crash Popups)
@@ -30,10 +30,10 @@ $Config = @{
     CornerRadius    = 24
     ScreenTopMargin = 8
     WindowWidth     = 570
-    WindowHeight    = 360
+    WindowHeight    = 580
 
     # --- v0 Design System Palette ---
-    Surface         = '#0E0E13'          # Shell Background
+    Surface         = '#0E0E13'          # Shell Background (Acrylic Layer)
     CardColor       = '#16161D'          # Raised Card Background
     InnerTileColor  = '#1A1A24'          # Inner Tiles / Sub-cards
     BorderColor     = '#22222E'          # Subtle Borders
@@ -41,7 +41,7 @@ $Config = @{
     SubtextColor    = '#9B9BA7'          # Text Muted
     GlowColor       = '#A78BFA'          # Accent Purple (Default)
     GlowRadius      = 32                 # Default Glow Radius
-    GlowOpacity     = 0.55               # Default Glow Opacity (Frames, not floods)
+    GlowOpacity     = 0.55               # Default Glow Opacity
 
     # --- Semantic Threshold Colors ---
     ColorGreen      = '#34D399'          # OK (<70%)
@@ -64,6 +64,7 @@ $Config = @{
     }
     Pinned          = $false
     EnableVolumeScroll = $true
+    WebDrawerUrl    = 'https://www.google.com'
 }
 
 function Load-Config {
@@ -77,6 +78,7 @@ function Load-Config {
             if ($null -ne $saved.GlowColor) { $Config.GlowColor = [string]$saved.GlowColor }
             if ($null -ne $saved.GlowRadius) { $Config.GlowRadius = [int]$saved.GlowRadius }
             if ($null -ne $saved.GlowOpacity) { $Config.GlowOpacity = [double]$saved.GlowOpacity }
+            if ($null -ne $saved.WebDrawerUrl) { $Config.WebDrawerUrl = [string]$saved.WebDrawerUrl }
             if ($null -ne $saved.Tabs) {
                 if ($null -ne $saved.Tabs.Today)    { $Config.Tabs.Today    = [bool]$saved.Tabs.Today }
                 if ($null -ne $saved.Tabs.Media)    { $Config.Tabs.Media    = [bool]$saved.Tabs.Media }
@@ -97,7 +99,7 @@ function Save-Config {
 Load-Config
 
 # ------------------------------------------------------------------------------
-#  S2  NATIVE INTEROP (Hardware Multimedia Keys, Master Audio & Telemetry)
+#  S2  NATIVE INTEROP (Windows 11 Acrylic Blur, Global Hotkey, CoreAudio & Media)
 # ------------------------------------------------------------------------------
 Add-Type -TypeDefinition @'
 using System;
@@ -157,6 +159,51 @@ public static class IslandNative {
 
     [DllImport("user32.dll")]
     private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+
+    [DllImport("user32.dll")]
+    public static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
+
+    [DllImport("user32.dll")]
+    public static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+
+    [DllImport("user32.dll")]
+    public static extern int SetWindowCompositionAttribute(IntPtr hwnd, ref WindowCompositionAttributeData data);
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct WindowCompositionAttributeData {
+        public int Attribute;
+        public IntPtr Data;
+        public int SizeOfData;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct AccentPolicy {
+        public int AccentState;
+        public int AccentFlags;
+        public int GradientColor;
+        public int AnimationId;
+    }
+
+    public static void EnableAcrylic(IntPtr hwnd, uint gradientColor) {
+        try {
+            var accent = new AccentPolicy();
+            accent.AccentState = 4; // ACCENT_ENABLE_ACRYLICBLURBEHIND
+            accent.GradientColor = (int)gradientColor;
+            accent.AccentFlags = 2;
+
+            int size = Marshal.SizeOf(accent);
+            IntPtr ptr = Marshal.AllocHGlobal(size);
+            Marshal.StructureToPtr(accent, ptr, false);
+
+            var data = new WindowCompositionAttributeData();
+            data.Attribute = 19; // WCA_ACCENT_POLICY
+            data.SizeOfData = size;
+            data.Data = ptr;
+
+            SetWindowCompositionAttribute(hwnd, ref data);
+            Marshal.FreeHGlobal(ptr);
+        } catch { }
+    }
 
     public static void VolumeUp() {
         keybd_event(VK_VOLUME_UP, 0, 0, UIntPtr.Zero);
@@ -218,6 +265,38 @@ public static class IslandNative {
         } catch { }
     }
 
+    public static bool ToggleMicrophone() {
+        try {
+            var enumerator = (IMMDeviceEnumerator)(new MMDeviceEnumeratorComObject());
+            IMMDevice dev;
+            enumerator.GetDefaultAudioEndpoint(1, 1, out dev); // 1 = eCapture
+            Guid IID_IAudioEndpointVolume = typeof(IAudioEndpointVolume).GUID;
+            object epvObj;
+            dev.Activate(ref IID_IAudioEndpointVolume, 1, IntPtr.Zero, out epvObj);
+            var epv = (IAudioEndpointVolume)epvObj;
+            bool isMuted;
+            epv.GetMute(out isMuted);
+            Guid ctx = Guid.Empty;
+            epv.SetMute(!isMuted, ref ctx);
+            return !isMuted;
+        } catch { return false; }
+    }
+
+    public static bool IsMicrophoneMuted() {
+        try {
+            var enumerator = (IMMDeviceEnumerator)(new MMDeviceEnumeratorComObject());
+            IMMDevice dev;
+            enumerator.GetDefaultAudioEndpoint(1, 1, out dev); // 1 = eCapture
+            Guid IID_IAudioEndpointVolume = typeof(IAudioEndpointVolume).GUID;
+            object epvObj;
+            dev.Activate(ref IID_IAudioEndpointVolume, 1, IntPtr.Zero, out epvObj);
+            var epv = (IAudioEndpointVolume)epvObj;
+            bool isMuted;
+            epv.GetMute(out isMuted);
+            return isMuted;
+        } catch { return false; }
+    }
+
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
     public class MEMORYSTATUSEX {
         public uint dwLength;
@@ -235,14 +314,6 @@ public static class IslandNative {
     [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool GlobalMemoryStatusEx([In, Out] MEMORYSTATUSEX lpBuffer);
-
-    public static uint GetMemoryLoad() {
-        try {
-            var stat = new MEMORYSTATUSEX();
-            if (GlobalMemoryStatusEx(stat)) return stat.dwMemoryLoad;
-            return 0;
-        } catch { return 0; }
-    }
 }
 '@
 
@@ -324,7 +395,6 @@ $null = $script:bgRunspace.AddScript({
         }
     } catch { $smtcReady = $false }
 
-    # Query CPU Max Clock once
     $cpuBaseClock = 3.6
     try {
         $proc = Get-CimInstance Win32_Processor -ErrorAction SilentlyContinue
@@ -422,7 +492,6 @@ $null = $script:bgRunspace.AddScript({
                     $st = $pbInfo.PlaybackStatus.ToString()
                     $state.MediaStatus = if ($st -in 'Playing','Paused','Stopped') { $st } else { 'None' }
 
-                    # Timeline extraction
                     try {
                         $tl = $session.GetTimelineProperties()
                         if ($null -ne $tl) {
@@ -448,7 +517,6 @@ $null = $script:bgRunspace.AddScript({
                             $state.MediaTitle  = $newTitle
                             $state.MediaArtist = $newArtist
 
-                            # Device source name
                             $appId = $session.SourceAppUserModelId
                             $appName = if ($appId -match 'spotify') { 'Spotify' }
                                        elseif ($appId -match 'edge|chrome|firefox') { 'Browser' }
@@ -457,7 +525,6 @@ $null = $script:bgRunspace.AddScript({
                             $sep = [string][char]0x00B7
                             $state.MediaDevice = "$appName $sep Headphones"
 
-                            # Live Album Art Extraction
                             if ($props.Thumbnail -and ($newTitle -ne $state.LastThumbTitle)) {
                                 $state.LastThumbTitle = $newTitle
                                 try {
@@ -495,7 +562,6 @@ $null = $script:bgRunspace.AddScript({
 $null = $script:bgRunspace.AddArgument($script:sharedState)
 $script:bgHandle = $script:bgRunspace.BeginInvoke()
 
-# Helper for instant zero-latency media control actions via hardware keys
 function Send-MediaCommandAsync ([string]$Cmd) {
     try {
         switch ($Cmd) {
@@ -507,7 +573,7 @@ function Send-MediaCommandAsync ([string]$Cmd) {
 }
 
 # ------------------------------------------------------------------------------
-#  S4  WPF XAML INTERFACE (v0 Suite: Today, Media, Stats, Controls, Power, Settings)
+#  S4  WPF XAML INTERFACE (v0 Suite + NotchPixel Suite: Drawer, QR & Acrylic)
 # ------------------------------------------------------------------------------
 [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -517,11 +583,11 @@ function Send-MediaCommandAsync ([string]$Cmd) {
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         Topmost="True" ShowInTaskbar="False" ResizeMode="NoResize"
         UseLayoutRounding="True" TextOptions.TextFormattingMode="Display"
-        TextOptions.TextRenderingMode="ClearType"
+        TextOptions.TextRenderingMode="ClearType" AllowDrop="True"
         FontFamily="Segoe UI, -apple-system, BlinkMacSystemFont, Roboto, sans-serif">
 
   <Window.Resources>
-    <!-- Tab Capsule Button Style (Neutral Sliding Pill) -->
+    <!-- Tab Capsule Button Style -->
     <Style x:Key="TabCapsuleStyle" TargetType="Button">
       <Setter Property="Focusable" Value="False"/>
       <Setter Property="Cursor" Value="Hand"/>
@@ -574,7 +640,7 @@ function Send-MediaCommandAsync ([string]$Cmd) {
       </Setter>
     </Style>
 
-    <!-- Modern Dark Flat Context Menu -->
+    <!-- Context Menu -->
     <ContextMenu x:Key="IslandContextMenu" Background="#14141E" BorderBrush="#25FFFFFF" BorderThickness="1" Padding="4">
       <MenuItem x:Name="MenuResetPos" Header="Reset Position to Top Center" Foreground="#EEEEEE" Background="#14141E"/>
       <Separator Background="#22222E"/>
@@ -583,13 +649,14 @@ function Send-MediaCommandAsync ([string]$Cmd) {
   </Window.Resources>
 
   <Grid HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,$($Config.ScreenTopMargin),0,0">
-    <!-- Outer Interactive Island Shell -->
+    <!-- Outer Interactive Island Shell with Acrylic Blur Layer -->
     <Border x:Name="GlowBorder"
             Width="$($Config.IslandWidth)" Height="$($Config.IslandHeight)"
             Background="$($Config.Surface)"
             BorderBrush="$($Config.BorderColor)" BorderThickness="1"
             CornerRadius="$($Config.CornerRadius)"
-            ClipToBounds="False" ContextMenu="{StaticResource IslandContextMenu}">
+            ClipToBounds="False" AllowDrop="True"
+            ContextMenu="{StaticResource IslandContextMenu}">
 
       <Border.Effect>
         <DropShadowEffect x:Name="IslandGlow"
@@ -610,16 +677,19 @@ function Send-MediaCommandAsync ([string]$Cmd) {
             <ColumnDefinition Width="Auto"/>
           </Grid.ColumnDefinitions>
 
-          <!-- Left Mini Status Glyph -->
+          <!-- Left Mini Status Glyph & Mic Indicator -->
           <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-            <TextBlock x:Name="CompactIcon" Text="&#xE8D6;" FontFamily="Segoe MDL2 Assets"
-                       FontSize="13" Foreground="$($Config.GlowColor)" VerticalAlignment="Center" Margin="0,0,6,0"/>
+            <Ellipse x:Name="CompactMicDot" Width="7" Height="7" Fill="$($Config.ColorGreen)" Margin="0,0,6,0" VerticalAlignment="Center"/>
             <TextBlock x:Name="CompactClock" Text="12:00" FontSize="13" FontWeight="Bold"
                        Foreground="$($Config.TextColor)" VerticalAlignment="Center"/>
           </StackPanel>
 
-          <!-- Center Subtle Separator -->
-          <TextBlock Grid.Column="1" Text="·" FontSize="14" Foreground="#444455"
+          <!-- Center Subtle Separator / Mic Pill -->
+          <Border x:Name="CompactCallPill" Grid.Column="1" Background="#22222E" CornerRadius="8" Padding="6,2"
+                  HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed">
+            <TextBlock x:Name="CompactCallText" Text="Live 00:00" FontSize="10" FontWeight="SemiBold" Foreground="$($Config.ColorGreen)"/>
+          </Border>
+          <TextBlock x:Name="CompactSep" Grid.Column="1" Text="·" FontSize="14" Foreground="#444455"
                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
 
           <!-- Right Battery & CPU Mini Telemetry -->
@@ -640,22 +710,27 @@ function Send-MediaCommandAsync ([string]$Cmd) {
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>  <!-- Row 0: Header & Capsule Tabs -->
             <RowDefinition Height="*"/>     <!-- Row 1: Active Tab Content   -->
+            <RowDefinition Height="Auto"/>  <!-- Row 2: Drawer Chevron & Container -->
           </Grid.RowDefinitions>
 
           <!-- =============================================================== -->
-          <!--  ROW 0: HEADER (Brand + Capsule Nav Bar + Controls)             -->
+          <!--  ROW 0: HEADER (Brand + Mic Status + Capsule Nav + Settings/Pin) -->
           <!-- =============================================================== -->
-          <Grid Grid.Row="0" Margin="2,0,2,10">
+          <Grid Grid.Row="0" Margin="2,0,2,8">
             <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="Auto"/> <!-- Brand -->
-              <ColumnDefinition Width="*"/>    <!-- Tabs -->
+              <ColumnDefinition Width="Auto"/> <!-- Brand & Mic Status -->
+              <ColumnDefinition Width="*"/>    <!-- Capsule Tabs -->
               <ColumnDefinition Width="Auto"/> <!-- Settings & Pin -->
             </Grid.ColumnDefinitions>
 
-            <!-- Brand Wordmark -->
-            <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="2,0,10,0">
-              <Ellipse x:Name="BrandDot" Width="8" Height="8" Fill="$($Config.GlowColor)" Margin="0,0,8,0"/>
-              <TextBlock Text="Island" FontSize="13" FontWeight="SemiBold" Foreground="$($Config.TextColor)" VerticalAlignment="Center"/>
+            <!-- Brand Wordmark & Mic Call Status Indicator -->
+            <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="2,0,8,0">
+              <Ellipse x:Name="BrandDot" Width="8" Height="8" Fill="$($Config.ColorGreen)" Margin="0,0,6,0" VerticalAlignment="Center"/>
+              <TextBlock Text="Island" FontSize="13" FontWeight="SemiBold" Foreground="$($Config.TextColor)" VerticalAlignment="Center" Margin="0,0,8,0"/>
+              <!-- Mic Mute Pill Counter -->
+              <Border x:Name="MicStatusPill" Background="#22222E" CornerRadius="8" Padding="5,2" VerticalAlignment="Center" Cursor="Hand" ToolTip="Click to Toggle Mic (Ctrl+Alt+M)">
+                <TextBlock x:Name="MicStatusText" Text="Mic Live" FontSize="10" FontWeight="SemiBold" Foreground="$($Config.ColorGreen)"/>
+              </Border>
             </StackPanel>
 
             <!-- Capsule Tab Navigation Bar -->
@@ -679,7 +754,7 @@ function Send-MediaCommandAsync ([string]$Cmd) {
           </Grid>
 
           <!-- =============================================================== -->
-          <!--  ROW 1: TAB 1 - TODAY VIEW (Image 5 Reference)                  -->
+          <!--  ROW 1: TAB 1 - TODAY VIEW                                      -->
           <!-- =============================================================== -->
           <Grid x:Name="ViewToday" Grid.Row="1" Visibility="Visible">
             <Grid.ColumnDefinitions>
@@ -696,16 +771,13 @@ function Send-MediaCommandAsync ([string]$Cmd) {
                   <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
-                <!-- Big Clock -->
                 <TextBlock x:Name="TodayClock" Grid.Row="0" Text="12:44 AM"
                            FontSize="34" FontWeight="Bold" Foreground="$($Config.TextColor)"
                            FontFamily="Segoe UI, Consolas, monospace"/>
 
-                <!-- Date -->
                 <TextBlock x:Name="TodayDate" Grid.Row="1" Text="Saturday, 7 November"
                            FontSize="12" Foreground="$($Config.SubtextColor)" Margin="2,4,0,12"/>
 
-                <!-- Greeting Pill -->
                 <Border Grid.Row="2" Background="#22222E" CornerRadius="10" Padding="8,4" HorizontalAlignment="Left">
                   <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                     <TextBlock x:Name="TodayGreetingIcon" Text="&#xE708;" FontFamily="Segoe MDL2 Assets"
@@ -721,18 +793,16 @@ function Send-MediaCommandAsync ([string]$Cmd) {
             <Border Grid.Column="1" Background="$($Config.CardColor)" CornerRadius="16" Padding="14,12" Margin="5,0,0,0">
               <Grid>
                 <Grid.RowDefinitions>
-                  <RowDefinition Height="Auto"/> <!-- Battery status -->
-                  <RowDefinition Height="*"/>    <!-- 3 Mini Bars -->
+                  <RowDefinition Height="Auto"/>
+                  <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
 
-                <!-- Top Battery Row -->
                 <Grid Grid.Row="0" Margin="0,0,0,10">
                   <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                   </Grid.ColumnDefinitions>
 
-                  <!-- Radial Battery Arc -->
                   <Grid Grid.Column="0" Width="44" Height="44" Margin="0,0,10,0">
                     <Ellipse Stroke="#22222E" StrokeThickness="4" Width="36" Height="36"/>
                     <Path x:Name="TodayBatteryArc" Stroke="$($Config.ColorGreen)" StrokeThickness="4"
@@ -742,16 +812,13 @@ function Send-MediaCommandAsync ([string]$Cmd) {
                                HorizontalAlignment="Center" VerticalAlignment="Center"/>
                   </Grid>
 
-                  <!-- Battery Info Text -->
                   <StackPanel Grid.Column="1" VerticalAlignment="Center">
                     <TextBlock x:Name="TodayBatteryPercent" Text="80%" FontSize="16" FontWeight="Bold" Foreground="$($Config.TextColor)"/>
-                    <TextBlock x:Name="TodayBatteryState" Text="Charging · 42 min to full" FontSize="11" Foreground="$($Config.SubtextColor)"/>
+                    <TextBlock x:Name="TodayBatteryState" Text="Charging · Connected to Power" FontSize="11" Foreground="$($Config.SubtextColor)"/>
                   </StackPanel>
                 </Grid>
 
-                <!-- 3 Mini Horizontal Hardware Bars -->
                 <StackPanel Grid.Row="1" VerticalAlignment="Center">
-                  <!-- CPU Bar -->
                   <Grid Margin="0,2">
                     <Grid.ColumnDefinitions>
                       <ColumnDefinition Width="34"/>
@@ -765,7 +832,6 @@ function Send-MediaCommandAsync ([string]$Cmd) {
                     <TextBlock x:Name="TodayCpuPct" Grid.Column="2" Text="30%" FontSize="11" Foreground="$($Config.TextColor)" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                   </Grid>
 
-                  <!-- GPU Bar -->
                   <Grid Margin="0,2">
                     <Grid.ColumnDefinitions>
                       <ColumnDefinition Width="34"/>
@@ -779,7 +845,6 @@ function Send-MediaCommandAsync ([string]$Cmd) {
                     <TextBlock x:Name="TodayGpuPct" Grid.Column="2" Text="55%" FontSize="11" Foreground="$($Config.TextColor)" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                   </Grid>
 
-                  <!-- RAM Bar -->
                   <Grid Margin="0,2">
                     <Grid.ColumnDefinitions>
                       <ColumnDefinition Width="34"/>
@@ -798,25 +863,27 @@ function Send-MediaCommandAsync ([string]$Cmd) {
           </Grid>
 
           <!-- =============================================================== -->
-          <!--  ROW 1: TAB 2 - MEDIA VIEW (Image 1 Reference)                  -->
+          <!--  ROW 1: TAB 2 - MEDIA VIEW (Layout Fixed + 8-Bar Visualizer)    -->
           <!-- =============================================================== -->
           <Grid x:Name="ViewMedia" Grid.Row="1" Visibility="Collapsed">
-            <Border Background="$($Config.CardColor)" CornerRadius="16" Padding="14" Margin="2,0">
+            <Border Background="$($Config.CardColor)" CornerRadius="16" Padding="14,12" Margin="2,0">
               <Grid>
                 <Grid.RowDefinitions>
-                  <RowDefinition Height="Auto"/>  <!-- Art + Info -->
-                  <RowDefinition Height="Auto"/>  <!-- Progress Bar -->
-                  <RowDefinition Height="Auto"/>  <!-- Controls -->
+                  <RowDefinition Height="Auto"/>  <!-- Art + Info + Visualizer -->
+                  <RowDefinition Height="Auto"/>  <!-- Progress Bar & Timestamps -->
+                  <RowDefinition Height="Auto"/>  <!-- Playback Controls Row -->
+                  <RowDefinition Height="Auto"/>  <!-- Compact Volume Slider -->
                 </Grid.RowDefinitions>
 
-                <!-- Top: Album Art + Track Info -->
-                <Grid Grid.Row="0" Margin="0,0,0,12">
+                <!-- Top: Album Art + Track Info + 8-Bar Active Visualizer -->
+                <Grid Grid.Row="0" Margin="0,0,0,10">
                   <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
                   </Grid.ColumnDefinitions>
 
-                  <!-- 80x80 Album Art Container -->
+                  <!-- 80x80 Rounded Album Art Container -->
                   <Border Grid.Column="0" Width="80" Height="80" CornerRadius="14"
                           Background="#1E1C2B" BorderBrush="#25FFFFFF" BorderThickness="1"
                           ClipToBounds="True" Margin="0,0,14,0">
@@ -830,7 +897,6 @@ function Send-MediaCommandAsync ([string]$Cmd) {
 
                   <!-- Track Info -->
                   <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                    <!-- Status Line -->
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
                       <TextBlock x:Name="MediaStatusIcon" Text="&#xE7F6;" FontFamily="Segoe MDL2 Assets"
                                  FontSize="11" Foreground="$($Config.SubtextColor)" Margin="0,0,6,0" VerticalAlignment="Center"/>
@@ -838,58 +904,62 @@ function Send-MediaCommandAsync ([string]$Cmd) {
                                  FontSize="11" Foreground="$($Config.SubtextColor)" VerticalAlignment="Center"/>
                     </StackPanel>
 
-                    <!-- Title -->
                     <TextBlock x:Name="MediaTitleText" Text="Loser"
-                               FontSize="19" FontWeight="Bold" Foreground="$($Config.TextColor)"
+                               FontSize="18" FontWeight="Bold" Foreground="$($Config.TextColor)"
                                TextTrimming="CharacterEllipsis"/>
 
-                    <!-- Artist -->
                     <TextBlock x:Name="MediaArtistText" Text="Tame Impala"
                                FontSize="13" Foreground="$($Config.SubtextColor)" Margin="0,2,0,0"
                                TextTrimming="CharacterEllipsis"/>
                   </StackPanel>
+
+                  <!-- Active 8-Bar Equalizer Visualizer -->
+                  <StackPanel x:Name="AudioVisualizerPanel" Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Height="26" Margin="10,0,4,0">
+                    <Border x:Name="VisBar0" Width="3" Height="6" Background="$($Config.GlowColor)" CornerRadius="1.5" Margin="1.5,0" VerticalAlignment="Bottom"/>
+                    <Border x:Name="VisBar1" Width="3" Height="12" Background="$($Config.GlowColor)" CornerRadius="1.5" Margin="1.5,0" VerticalAlignment="Bottom"/>
+                    <Border x:Name="VisBar2" Width="3" Height="18" Background="$($Config.GlowColor)" CornerRadius="1.5" Margin="1.5,0" VerticalAlignment="Bottom"/>
+                    <Border x:Name="VisBar3" Width="3" Height="24" Background="$($Config.GlowColor)" CornerRadius="1.5" Margin="1.5,0" VerticalAlignment="Bottom"/>
+                    <Border x:Name="VisBar4" Width="3" Height="16" Background="$($Config.GlowColor)" CornerRadius="1.5" Margin="1.5,0" VerticalAlignment="Bottom"/>
+                    <Border x:Name="VisBar5" Width="3" Height="22" Background="$($Config.GlowColor)" CornerRadius="1.5" Margin="1.5,0" VerticalAlignment="Bottom"/>
+                    <Border x:Name="VisBar6" Width="3" Height="14" Background="$($Config.GlowColor)" CornerRadius="1.5" Margin="1.5,0" VerticalAlignment="Bottom"/>
+                    <Border x:Name="VisBar7" Width="3" Height="8" Background="$($Config.GlowColor)" CornerRadius="1.5" Margin="1.5,0" VerticalAlignment="Bottom"/>
+                  </StackPanel>
                 </Grid>
 
                 <!-- Middle: Progress Track & Timestamps -->
-                <Grid Grid.Row="1" Margin="0,0,0,10">
+                <Grid Grid.Row="1" Margin="0,0,0,8">
                   <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                   </Grid.RowDefinitions>
 
-                  <!-- Timestamps -->
                   <Grid Grid.Row="0" Margin="0,0,0,4">
                     <TextBlock x:Name="MediaTimeCurrent" Text="1:12" FontSize="11" Foreground="$($Config.SubtextColor)" HorizontalAlignment="Left"/>
                     <TextBlock x:Name="MediaTimeTotal"   Text="4:43" FontSize="11" Foreground="$($Config.SubtextColor)" HorizontalAlignment="Right"/>
                   </Grid>
 
-                  <!-- Progress Bar Line -->
                   <Border x:Name="MediaTrackContainer" Grid.Row="1" Background="#22222E" Height="4" CornerRadius="2">
                     <Border x:Name="MediaProgressLine" Background="#FFFFFF" Height="4" CornerRadius="2" HorizontalAlignment="Left" Width="120"/>
                   </Border>
                 </Grid>
 
-                <!-- Bottom: Playback Controls Row -->
-                <Grid Grid.Row="2">
+                <!-- Playback Controls Row (Zero Edge Clipping) -->
+                <Grid Grid.Row="2" Margin="0,0,0,6">
                   <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                   </Grid.ColumnDefinitions>
 
-                  <!-- Shuffle -->
                   <Button x:Name="BtnMediaShuffle" Grid.Column="0" Content="&#xE8B1;" FontFamily="Segoe MDL2 Assets"
                           FontSize="14" Foreground="$($Config.SubtextColor)" Background="Transparent"
                           Width="32" Height="32" Cursor="Hand" Focusable="False" Style="{StaticResource HeaderActionBtnStyle}"/>
 
-                  <!-- Center Controls: Prev, White Pill Play/Pause, Next -->
                   <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
-                    <!-- Previous -->
                     <Button x:Name="BtnMediaPrev" Content="&#xE892;" FontFamily="Segoe MDL2 Assets"
                             FontSize="15" Foreground="$($Config.TextColor)" Background="Transparent"
                             Width="36" Height="36" Cursor="Hand" Focusable="False" Style="{StaticResource HeaderActionBtnStyle}"/>
 
-                    <!-- High Contrast Circular White Pill Play/Pause -->
                     <Button x:Name="BtnMediaPlay" Content="&#xE768;" FontFamily="Segoe MDL2 Assets"
                             FontSize="16" Foreground="#0E0E13" Background="#FFFFFF"
                             Width="44" Height="44" Margin="14,0" Cursor="Hand" Focusable="False">
@@ -907,23 +977,33 @@ function Send-MediaCommandAsync ([string]$Cmd) {
                       </Button.Template>
                     </Button>
 
-                    <!-- Next -->
                     <Button x:Name="BtnMediaNext" Content="&#xE893;" FontFamily="Segoe MDL2 Assets"
                             FontSize="15" Foreground="$($Config.TextColor)" Background="Transparent"
                             Width="36" Height="36" Cursor="Hand" Focusable="False" Style="{StaticResource HeaderActionBtnStyle}"/>
                   </StackPanel>
 
-                  <!-- Output Device Toggle -->
                   <Button x:Name="BtnMediaOutput" Grid.Column="2" Content="&#xE7F6;" FontFamily="Segoe MDL2 Assets"
                           FontSize="14" Foreground="$($Config.SubtextColor)" Background="Transparent"
                           Width="32" Height="32" Cursor="Hand" Focusable="False" Style="{StaticResource HeaderActionBtnStyle}"/>
+                </Grid>
+
+                <!-- Compact Master Volume Bar in Media Tab -->
+                <Grid Grid.Row="3" Margin="8,0,8,0">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                  </Grid.ColumnDefinitions>
+                  <TextBlock Grid.Column="0" Text="&#xE767;" FontFamily="Segoe MDL2 Assets" FontSize="11" Foreground="$($Config.SubtextColor)" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                  <Slider x:Name="SliderMediaVolume" Grid.Column="1" Minimum="0" Maximum="100" Value="50" VerticalAlignment="Center" Focusable="False" Cursor="Hand"/>
+                  <TextBlock x:Name="TextMediaVolumeVal" Grid.Column="2" Text="50%" FontSize="10" Foreground="$($Config.SubtextColor)" VerticalAlignment="Center" Margin="8,0,0,0"/>
                 </Grid>
               </Grid>
             </Border>
           </Grid>
 
           <!-- =============================================================== -->
-          <!--  ROW 1: TAB 3 - STATS VIEW (Image 2 Reference)                  -->
+          <!--  ROW 1: TAB 3 - STATS VIEW (Live Thermals & Clock Telemetry)    -->
           <!-- =============================================================== -->
           <Grid x:Name="ViewStats" Grid.Row="1" Visibility="Collapsed">
             <Grid.ColumnDefinitions>
@@ -932,10 +1012,9 @@ function Send-MediaCommandAsync ([string]$Cmd) {
               <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
-            <!-- Card 1: CPU Load -->
+            <!-- Card 1: CPU Load & Temp -->
             <Border Grid.Column="0" Background="$($Config.CardColor)" CornerRadius="16" Padding="10,14" Margin="0,0,4,0">
               <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                <!-- Circular Ring Gauge -->
                 <Grid Width="76" Height="76">
                   <Ellipse Stroke="#22222E" StrokeThickness="5.5" Width="66" Height="66"/>
                   <Path x:Name="StatsCpuArc" Stroke="$($Config.GlowColor)" StrokeThickness="5.5"
@@ -948,10 +1027,9 @@ function Send-MediaCommandAsync ([string]$Cmd) {
               </StackPanel>
             </Border>
 
-            <!-- Card 2: GPU 3D -->
+            <!-- Card 2: GPU 3D & Temp -->
             <Border Grid.Column="1" Background="$($Config.CardColor)" CornerRadius="16" Padding="10,14" Margin="4,0,4,0">
               <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                <!-- Circular Ring Gauge -->
                 <Grid Width="76" Height="76">
                   <Ellipse Stroke="#22222E" StrokeThickness="5.5" Width="66" Height="66"/>
                   <Path x:Name="StatsGpuArc" Stroke="$($Config.GlowColor)" StrokeThickness="5.5"
@@ -967,7 +1045,6 @@ function Send-MediaCommandAsync ([string]$Cmd) {
             <!-- Card 3: Memory -->
             <Border Grid.Column="2" Background="$($Config.CardColor)" CornerRadius="16" Padding="10,14" Margin="4,0,0,0">
               <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                <!-- Circular Ring Gauge -->
                 <Grid Width="76" Height="76">
                   <Ellipse Stroke="#22222E" StrokeThickness="5.5" Width="66" Height="66"/>
                   <Path x:Name="StatsRamArc" Stroke="$($Config.ColorRed)" StrokeThickness="5.5"
@@ -982,15 +1059,15 @@ function Send-MediaCommandAsync ([string]$Cmd) {
           </Grid>
 
           <!-- =============================================================== -->
-          <!--  ROW 1: TAB 4 - CONTROLS VIEW (Image 3 Reference)               -->
+          <!--  ROW 1: TAB 4 - CONTROLS VIEW                                   -->
           <!-- =============================================================== -->
           <Grid x:Name="ViewControls" Grid.Row="1" Visibility="Collapsed">
             <Grid.RowDefinitions>
-              <RowDefinition Height="Auto"/> <!-- Master Volume Card -->
-              <RowDefinition Height="Auto"/> <!-- 4 Quick-Action Tiles -->
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <!-- Top Card: Master Volume Slider -->
+            <!-- Master Volume Card -->
             <Border Grid.Row="0" Background="$($Config.CardColor)" CornerRadius="16" Padding="14,12" Margin="2,0,2,8">
               <Grid VerticalAlignment="Center">
                 <Grid.ColumnDefinitions>
@@ -1000,26 +1077,22 @@ function Send-MediaCommandAsync ([string]$Cmd) {
                   <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <!-- Speaker Icon -->
                 <TextBlock Grid.Column="0" Text="&#xE767;" FontFamily="Segoe MDL2 Assets"
                            FontSize="14" Foreground="$($Config.TextColor)" VerticalAlignment="Center" Margin="0,0,12,0"/>
 
-                <!-- Volume Slider -->
                 <Slider x:Name="SliderMasterVolume" Grid.Column="1" Minimum="0" Maximum="100" Value="43"
                         VerticalAlignment="Center" Focusable="False" Cursor="Hand"/>
 
-                <!-- Volume Indicator Number -->
                 <TextBlock x:Name="TextMasterVolumeVal" Grid.Column="2" Text="43"
                            FontSize="13" FontWeight="Bold" Foreground="$($Config.SubtextColor)"
                            VerticalAlignment="Center" Margin="12,0,8,0"/>
 
-                <!-- Headphone Icon -->
                 <TextBlock Grid.Column="3" Text="&#xE7F6;" FontFamily="Segoe MDL2 Assets"
                            FontSize="14" Foreground="$($Config.SubtextColor)" VerticalAlignment="Center"/>
               </Grid>
             </Border>
 
-            <!-- Bottom Row: 4 Quick-Action Tiles -->
+            <!-- 4 Quick-Action Tiles -->
             <Grid Grid.Row="1" Margin="2,0">
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
@@ -1028,7 +1101,6 @@ function Send-MediaCommandAsync ([string]$Cmd) {
                 <ColumnDefinition Width="*"/>
               </Grid.ColumnDefinitions>
 
-              <!-- Tile 1: Bluetooth -->
               <Border x:Name="TileBluetooth" Grid.Column="0" Background="$($Config.CardColor)" CornerRadius="14" Padding="12" Margin="0,0,4,0" Cursor="Hand">
                 <StackPanel>
                   <Border Width="30" Height="30" CornerRadius="9" Background="#2D234A" HorizontalAlignment="Left" Margin="0,0,0,10">
@@ -1040,7 +1112,6 @@ function Send-MediaCommandAsync ([string]$Cmd) {
                 </StackPanel>
               </Border>
 
-              <!-- Tile 2: Display -->
               <Border x:Name="TileDisplay" Grid.Column="1" Background="$($Config.CardColor)" CornerRadius="14" Padding="12" Margin="4,0,4,0" Cursor="Hand">
                 <StackPanel>
                   <Border Width="30" Height="30" CornerRadius="9" Background="#22222E" HorizontalAlignment="Left" Margin="0,0,0,10">
@@ -1052,7 +1123,6 @@ function Send-MediaCommandAsync ([string]$Cmd) {
                 </StackPanel>
               </Border>
 
-              <!-- Tile 3: Task Manager -->
               <Border x:Name="TileTaskMgr" Grid.Column="2" Background="$($Config.CardColor)" CornerRadius="14" Padding="12" Margin="4,0,4,0" Cursor="Hand">
                 <StackPanel>
                   <Border Width="30" Height="30" CornerRadius="9" Background="#22222E" HorizontalAlignment="Left" Margin="0,0,0,10">
@@ -1064,7 +1134,6 @@ function Send-MediaCommandAsync ([string]$Cmd) {
                 </StackPanel>
               </Border>
 
-              <!-- Tile 4: Explorer -->
               <Border x:Name="TileExplorer" Grid.Column="3" Background="$($Config.CardColor)" CornerRadius="14" Padding="12" Margin="4,0,0,0" Cursor="Hand">
                 <StackPanel>
                   <Border Width="30" Height="30" CornerRadius="9" Background="#22222E" HorizontalAlignment="Left" Margin="0,0,0,10">
@@ -1079,15 +1148,14 @@ function Send-MediaCommandAsync ([string]$Cmd) {
           </Grid>
 
           <!-- =============================================================== -->
-          <!--  ROW 1: TAB 5 - POWER VIEW (Image 4 Reference)                  -->
+          <!--  ROW 1: TAB 5 - POWER VIEW                                      -->
           <!-- =============================================================== -->
           <Grid x:Name="ViewPower" Grid.Row="1" Visibility="Collapsed">
             <Grid.RowDefinitions>
-              <RowDefinition Height="Auto"/>  <!-- 4 Action Tiles -->
-              <RowDefinition Height="Auto"/>  <!-- Footer Uptime -->
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <!-- Top Row: 4 Action Tiles -->
             <Grid Grid.Row="0" Margin="2,0,2,10">
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
@@ -1096,7 +1164,6 @@ function Send-MediaCommandAsync ([string]$Cmd) {
                 <ColumnDefinition Width="*"/>
               </Grid.ColumnDefinitions>
 
-              <!-- Tile 1: Lock -->
               <Border x:Name="TilePowerLock" Grid.Column="0" Background="$($Config.CardColor)" CornerRadius="14" Padding="12" Margin="0,0,4,0" Cursor="Hand">
                 <StackPanel>
                   <Border Width="30" Height="30" CornerRadius="9" Background="#22222E" HorizontalAlignment="Left" Margin="0,0,0,10">
@@ -1108,7 +1175,6 @@ function Send-MediaCommandAsync ([string]$Cmd) {
                 </StackPanel>
               </Border>
 
-              <!-- Tile 2: Sleep -->
               <Border x:Name="TilePowerSleep" Grid.Column="1" Background="$($Config.CardColor)" CornerRadius="14" Padding="12" Margin="4,0,4,0" Cursor="Hand">
                 <StackPanel>
                   <Border Width="30" Height="30" CornerRadius="9" Background="#22222E" HorizontalAlignment="Left" Margin="0,0,0,10">
@@ -1120,7 +1186,6 @@ function Send-MediaCommandAsync ([string]$Cmd) {
                 </StackPanel>
               </Border>
 
-              <!-- Tile 3: Restart -->
               <Border x:Name="TilePowerRestart" Grid.Column="2" Background="$($Config.CardColor)" CornerRadius="14" Padding="12" Margin="4,0,4,0" Cursor="Hand">
                 <StackPanel>
                   <Border Width="30" Height="30" CornerRadius="9" Background="#22222E" HorizontalAlignment="Left" Margin="0,0,0,10">
@@ -1132,7 +1197,6 @@ function Send-MediaCommandAsync ([string]$Cmd) {
                 </StackPanel>
               </Border>
 
-              <!-- Tile 4: Shut Down (Red Tinted) -->
               <Border x:Name="TilePowerShutdown" Grid.Column="3" Background="$($Config.CardColor)" CornerRadius="14" Padding="12" Margin="4,0,0,0" Cursor="Hand">
                 <StackPanel>
                   <Border Width="30" Height="30" CornerRadius="9" Background="#2D1B22" HorizontalAlignment="Left" Margin="0,0,0,10">
@@ -1145,7 +1209,6 @@ function Send-MediaCommandAsync ([string]$Cmd) {
               </Border>
             </Grid>
 
-            <!-- Bottom Row: System Uptime -->
             <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Left" Margin="6,2,0,0">
               <TextBlock Text="&#xE946;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="$($Config.SubtextColor)" Margin="0,0,6,0" VerticalAlignment="Center"/>
               <TextBlock x:Name="TextPowerUptime" Text="Uptime 3d 4h · Last restart Wed 09:12" FontSize="11" Foreground="$($Config.SubtextColor)" VerticalAlignment="Center"/>
@@ -1153,11 +1216,10 @@ function Send-MediaCommandAsync ([string]$Cmd) {
           </Grid>
 
           <!-- =============================================================== -->
-          <!--  ROW 1: TAB 6 - SETTINGS VIEW (Full Suite Customization)         -->
+          <!--  ROW 1: TAB 6 - SETTINGS VIEW                                   -->
           <!-- =============================================================== -->
           <Grid x:Name="ViewSettings" Grid.Row="1" Visibility="Collapsed">
             <StackPanel Margin="2,0">
-              <!-- Card 1: Accent Color -->
               <Border Background="$($Config.CardColor)" CornerRadius="16" Padding="14,10" Margin="0,0,0,6">
                 <Grid>
                   <Grid.ColumnDefinitions>
@@ -1168,7 +1230,6 @@ function Send-MediaCommandAsync ([string]$Cmd) {
 
                   <TextBlock Grid.Column="0" Text="ACCENT COLOR" FontSize="10" FontWeight="SemiBold" Foreground="$($Config.SubtextColor)" VerticalAlignment="Center" Margin="0,0,10,0"/>
 
-                  <!-- Swatches -->
                   <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                     <Button x:Name="BtnColorPurple"  Width="26" Height="26" Margin="3,0" Cursor="Hand" Focusable="False" Tag="#A78BFA"/>
                     <Button x:Name="BtnColorCyan"    Width="26" Height="26" Margin="3,0" Cursor="Hand" Focusable="False" Tag="#00E5FF"/>
@@ -1178,7 +1239,6 @@ function Send-MediaCommandAsync ([string]$Cmd) {
                     <Button x:Name="BtnColorRed"     Width="26" Height="26" Margin="3,0" Cursor="Hand" Focusable="False" Tag="#F87171"/>
                   </StackPanel>
 
-                  <!-- Editable Hex Code Input -->
                   <TextBox x:Name="InputHexColor" Grid.Column="2" Text="$($Config.GlowColor)"
                            Width="76" Height="26" Background="#22222E" Foreground="$($Config.TextColor)"
                            BorderBrush="#25FFFFFF" BorderThickness="1"
@@ -1186,7 +1246,6 @@ function Send-MediaCommandAsync ([string]$Cmd) {
                 </Grid>
               </Border>
 
-              <!-- Card 2: Aura Glow Sliders -->
               <Border Background="$($Config.CardColor)" CornerRadius="16" Padding="14,10" Margin="0,0,0,6">
                 <Grid>
                   <Grid.RowDefinitions>
@@ -1194,7 +1253,6 @@ function Send-MediaCommandAsync ([string]$Cmd) {
                     <RowDefinition Height="Auto"/>
                   </Grid.RowDefinitions>
 
-                  <!-- Glow Radius -->
                   <Grid Grid.Row="0" Margin="0,2">
                     <Grid.ColumnDefinitions>
                       <ColumnDefinition Width="65"/>
@@ -1206,7 +1264,6 @@ function Send-MediaCommandAsync ([string]$Cmd) {
                     <TextBlock x:Name="TextGlowRadiusVal" Grid.Column="2" Text="$($Config.GlowRadius)px" FontSize="11" Foreground="$($Config.TextColor)" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                   </Grid>
 
-                  <!-- Glow Opacity -->
                   <Grid Grid.Row="1" Margin="0,4,0,2">
                     <Grid.ColumnDefinitions>
                       <ColumnDefinition Width="65"/>
@@ -1220,7 +1277,6 @@ function Send-MediaCommandAsync ([string]$Cmd) {
                 </Grid>
               </Border>
 
-              <!-- Card 3: Visible Tabs Chips -->
               <Border Background="$($Config.CardColor)" CornerRadius="16" Padding="14,10">
                 <Grid>
                   <Grid.ColumnDefinitions>
@@ -1239,7 +1295,100 @@ function Send-MediaCommandAsync ([string]$Cmd) {
               </Border>
             </StackPanel>
           </Grid>
+
+          <!-- =============================================================== -->
+          <!--  ROW 2: NOTCHPIXEL EXPANDABLE WEB DRAWER CONTAINER             -->
+          <!-- =============================================================== -->
+          <Grid Grid.Row="2" Margin="0,8,0,0">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto"/> <!-- Drawer Handle -->
+              <RowDefinition Height="Auto"/> <!-- Drawer WebBrowser / QR Panel -->
+            </Grid.RowDefinitions>
+
+            <!-- Bottom Center Drawer Toggle Chevron -->
+            <Border x:Name="BtnDrawerToggle" Grid.Row="0" Background="#16161D" CornerRadius="8"
+                    Padding="16,3" HorizontalAlignment="Center" Cursor="Hand" ToolTip="Toggle Web Drawer">
+              <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock x:Name="DrawerChevronIcon" Text="&#xE70E;" FontFamily="Segoe MDL2 Assets"
+                           FontSize="10" Foreground="$($Config.SubtextColor)" Margin="0,0,4,0" VerticalAlignment="Center"/>
+                <TextBlock Text="Web Drawer" FontSize="10" FontWeight="SemiBold" Foreground="$($Config.SubtextColor)" VerticalAlignment="Center"/>
+              </StackPanel>
+            </Border>
+
+            <!-- Expandable Drawer Panel -->
+            <Border x:Name="WebDrawerContainer" Grid.Row="1" Background="#16161D" CornerRadius="14"
+                    Height="200" Margin="2,8,2,0" Visibility="Collapsed" ClipToBounds="True">
+              <Grid>
+                <Grid.RowDefinitions>
+                  <RowDefinition Height="Auto"/>
+                  <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <!-- Mini Browser Address Bar -->
+                <Grid Grid.Row="0" Margin="8,6,8,4">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                  </Grid.ColumnDefinitions>
+                  <TextBox x:Name="InputDrawerUrl" Grid.Column="0" Text="$($Config.WebDrawerUrl)"
+                           Background="#22222E" Foreground="$($Config.TextColor)" BorderThickness="0"
+                           Padding="6,3" FontSize="11" VerticalAlignment="Center"/>
+                  <Button x:Name="BtnDrawerGo" Grid.Column="1" Content="Go"
+                          Background="$($Config.GlowColor)" Foreground="#0E0E13" FontWeight="Bold"
+                          FontSize="11" Padding="10,3" Margin="6,0,0,0" Cursor="Hand" Focusable="False">
+                    <Button.Template>
+                      <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                          <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                      </ControlTemplate>
+                    </Button.Template>
+                  </Button>
+                </Grid>
+                <!-- WebBrowser Viewport -->
+                <WebBrowser x:Name="DrawerBrowser" Grid.Row="1" Margin="4,0,4,4"/>
+              </Grid>
+            </Border>
+          </Grid>
         </Grid>
+
+        <!-- ================================================================= -->
+        <!--  MODAL: QUICK FILE SHARING QR CODE OVERLAY (Drop File to Share)   -->
+        <!-- ================================================================= -->
+        <Border x:Name="QrShareOverlay" Background="#F00E0E13" CornerRadius="22"
+                Margin="8" Visibility="Collapsed" Opacity="0.0">
+          <Grid VerticalAlignment="Center" HorizontalAlignment="Center">
+            <StackPanel HorizontalAlignment="Center">
+              <TextBlock Text="Instant Mobile File Transfer" FontSize="14" FontWeight="Bold" Foreground="$($Config.TextColor)" HorizontalAlignment="Center" Margin="0,0,0,4"/>
+              <TextBlock x:Name="QrFileNameText" Text="myfile.pdf" FontSize="11" Foreground="$($Config.GlowColor)" HorizontalAlignment="Center" Margin="0,0,0,8"/>
+              <Border Width="130" Height="130" Background="#FFFFFF" CornerRadius="10" Padding="6" HorizontalAlignment="Center">
+                <Image x:Name="QrCodeImage" Stretch="Uniform"/>
+              </Border>
+              <TextBlock x:Name="QrUrlText" Text="http://192.168.1.5:8088/file" FontSize="11" Foreground="$($Config.SubtextColor)" HorizontalAlignment="Center" Margin="0,8,0,8"/>
+              <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                <Button x:Name="BtnQrCopyLink" Content="Copy Link" Background="#22222E" Foreground="$($Config.TextColor)"
+                        FontSize="11" Padding="10,4" Margin="4,0" Cursor="Hand" Focusable="False">
+                  <Button.Template>
+                    <ControlTemplate TargetType="Button">
+                      <Border Background="{TemplateBinding Background}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                      </Border>
+                    </ControlTemplate>
+                  </Button.Template>
+                </Button>
+                <Button x:Name="BtnQrClose" Content="Close" Background="#2D1B22" Foreground="$($Config.ColorRed)"
+                        FontSize="11" Padding="10,4" Margin="4,0" Cursor="Hand" Focusable="False">
+                  <Button.Template>
+                    <ControlTemplate TargetType="Button">
+                      <Border Background="{TemplateBinding Background}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                      </Border>
+                    </ControlTemplate>
+                  </Button.Template>
+                </Button>
+              </StackPanel>
+            </StackPanel>
+          </Grid>
+        </Border>
       </Grid>
     </Border>
   </Grid>
@@ -1258,10 +1407,15 @@ $islandGlow          = $window.FindName('IslandGlow')
 $compactBar          = $window.FindName('CompactBar')
 $expandedCard        = $window.FindName('ExpandedCard')
 $brandDot            = $window.FindName('BrandDot')
+$micStatusPill       = $window.FindName('MicStatusPill')
+$micStatusText       = $window.FindName('MicStatusText')
 
 # Compact Bar Elements
-$compactIcon         = $window.FindName('CompactIcon')
+$compactMicDot       = $window.FindName('CompactMicDot')
 $compactClock        = $window.FindName('CompactClock')
+$compactCallPill     = $window.FindName('CompactCallPill')
+$compactCallText     = $window.FindName('CompactCallText')
+$compactSep          = $window.FindName('CompactSep')
 $compactBatteryIcon  = $window.FindName('CompactBatteryIcon')
 $compactBatteryText  = $window.FindName('CompactBatteryText')
 $compactCpuText      = $window.FindName('CompactCpuText')
@@ -1315,6 +1469,20 @@ $btnMediaPrev        = $window.FindName('BtnMediaPrev')
 $btnMediaPlay        = $window.FindName('BtnMediaPlay')
 $btnMediaNext        = $window.FindName('BtnMediaNext')
 $btnMediaOutput      = $window.FindName('BtnMediaOutput')
+$sliderMediaVolume   = $window.FindName('SliderMediaVolume')
+$textMediaVolumeVal  = $window.FindName('TextMediaVolumeVal')
+
+# 8 Visualizer Bars
+$visBars = @(
+    $window.FindName('VisBar0'),
+    $window.FindName('VisBar1'),
+    $window.FindName('VisBar2'),
+    $window.FindName('VisBar3'),
+    $window.FindName('VisBar4'),
+    $window.FindName('VisBar5'),
+    $window.FindName('VisBar6'),
+    $window.FindName('VisBar7')
+)
 
 # Tab 3: Stats Elements
 $statsCpuArc         = $window.FindName('StatsCpuArc')
@@ -1364,12 +1532,28 @@ $toggleTabStats      = $window.FindName('ToggleTabStats')
 $toggleTabControls   = $window.FindName('ToggleTabControls')
 $toggleTabPower      = $window.FindName('ToggleTabPower')
 
+# Drawer Elements
+$btnDrawerToggle     = $window.FindName('BtnDrawerToggle')
+$drawerChevronIcon   = $window.FindName('DrawerChevronIcon')
+$webDrawerContainer  = $window.FindName('WebDrawerContainer')
+$inputDrawerUrl      = $window.FindName('InputDrawerUrl')
+$btnDrawerGo         = $window.FindName('BtnDrawerGo')
+$drawerBrowser       = $window.FindName('DrawerBrowser')
+
+# QR Share Overlay Elements
+$qrShareOverlay      = $window.FindName('QrShareOverlay')
+$qrFileNameText      = $window.FindName('QrFileNameText')
+$qrCodeImage         = $window.FindName('QrCodeImage')
+$qrUrlText           = $window.FindName('QrUrlText')
+$btnQrCopyLink       = $window.FindName('BtnQrCopyLink')
+$btnQrClose          = $window.FindName('BtnQrClose')
+
 # Context Menu Items
 $menuResetPos        = $window.FindName('MenuResetPos')
 $menuQuit            = $window.FindName('MenuQuit')
 
 # ------------------------------------------------------------------------------
-#  S6  SCREEN POSITIONING & DYNAMIC CONTENT-FIT HEIGHT CONTROLLER
+#  S6  SCREEN POSITIONING, CONTENT-FIT HEIGHT & DRAWER CONTROLLER
 # ------------------------------------------------------------------------------
 $script:expanded      = $false
 $script:isDragging    = $false
@@ -1378,6 +1562,10 @@ $script:activeTab     = 'Today'
 $script:currentArtBytes = $null
 $script:lastMediaTitle  = ''
 $script:mediaAutoShown  = $false
+$script:drawerOpen    = $false
+$script:visPhase      = 0.0
+$script:micSeconds    = 0
+$script:isMicMuted    = $false
 
 # Screen positioning initialization
 if ($null -ne $Config.X -and $null -ne $Config.Y) {
@@ -1391,19 +1579,18 @@ if ($null -ne $Config.X -and $null -ne $Config.Y) {
     Save-Config
 }
 
-# Update Pin Icon state
 if ($script:pinned) {
     $btnPin.Foreground = New-Object System.Windows.Media.SolidColorBrush([System.Windows.Media.ColorConverter]::ConvertFromString($Config.GlowColor))
 }
 
-# Content-Fit Dynamic Height Mapping
+# Generous Content-Fit Heights (Completely Eliminates Clipping)
 $script:tabHeights = @{
-    'Today'    = 225
-    'Media'    = 235
-    'Stats'    = 210
-    'Controls' = 210
-    'Power'    = 195
-    'Settings' = 280
+    'Today'    = 235
+    'Media'    = 280
+    'Stats'    = 225
+    'Controls' = 225
+    'Power'    = 215
+    'Settings' = 300
 }
 
 $script:allTabs = @{
@@ -1445,9 +1632,9 @@ function Switch-Tab ([string]$tabName) {
         }
     }
 
-    # Animate Content-Fit Dynamic Height smoothly
     if ($script:expanded) {
-        $targetH = [double]$script:tabHeights[$tabName]
+        $baseH = [double]$script:tabHeights[$tabName]
+        $targetH = if ($script:drawerOpen) { $baseH + 220 } else { $baseH }
         $animH = New-Object System.Windows.Media.Animation.DoubleAnimation($targetH, [TimeSpan]::FromMilliseconds(200))
         $ease = New-Object System.Windows.Media.Animation.CubicEase
         $ease.EasingMode = 'EaseOut'
@@ -1461,7 +1648,8 @@ function Expand-Island {
     if ($script:expanded) { return }
     $script:expanded = $true
 
-    $targetH = [double]$script:tabHeights[$script:activeTab]
+    $baseH = [double]$script:tabHeights[$script:activeTab]
+    $targetH = if ($script:drawerOpen) { $baseH + 220 } else { $baseH }
     $ease = New-Object System.Windows.Media.Animation.CubicEase
     $ease.EasingMode = 'EaseOut'
 
@@ -1513,7 +1701,148 @@ function Collapse-Island {
 }
 
 # ------------------------------------------------------------------------------
-#  S7  CUSTOMIZATION CONTROLLER (Swatches, Hex Input, Aura & Tab Toggles)
+#  S7  NOTCHPIXEL FEATURES: DRAWER, QR SHARING & MIC MUTE
+# ------------------------------------------------------------------------------
+# 1. Expandable Web Drawer
+$btnDrawerToggle.Add_MouseLeftButtonDown({
+    $script:drawerOpen = -not $script:drawerOpen
+    if ($script:drawerOpen) {
+        $webDrawerContainer.Visibility = 'Visible'
+        $drawerChevronIcon.Text = [string][char]0xE70D # Chevron Up
+        try {
+            if ($drawerBrowser.Source -eq $null) {
+                $drawerBrowser.Navigate($Config.WebDrawerUrl)
+            }
+        } catch { }
+    } else {
+        $webDrawerContainer.Visibility = 'Collapsed'
+        $drawerChevronIcon.Text = [string][char]0xE70E # Chevron Down
+    }
+    # Animate height smoothly
+    Switch-Tab $script:activeTab
+})
+
+$btnDrawerGo.Add_Click({
+    try {
+        $u = $inputDrawerUrl.Text.Trim()
+        if (-not $u.StartsWith('http://') -and -not $u.StartsWith('https://')) { $u = "https://$u" }
+        $drawerBrowser.Navigate($u)
+        $Config.WebDrawerUrl = $u
+        Save-Config
+    } catch { }
+})
+
+# 2. Quick File Sharing & QR Generator
+$script:fileServer = $null
+$glowBorder.Add_Drop({
+    param($s, $e)
+    if ($e.Data.GetDataPresent([System.Windows.DataFormats]::FileDrop)) {
+        $files = $e.Data.GetData([System.Windows.DataFormats]::FileDrop)
+        if ($files -and $files.Count -gt 0) {
+            $filePath = $files[0]
+            $fileName = [System.IO.Path]::GetFileName($filePath)
+            $qrFileNameText.Text = $fileName
+
+            # Determine local network IP
+            $localIp = '127.0.0.1'
+            try {
+                $ips = [System.Net.Dns]::GetHostAddresses([System.Net.Dns]::GetHostName()) |
+                       Where-Object { $_.AddressFamily -eq 'InterNetwork' -and $_.IPAddressToString -notlike '127.*' -and $_.IPAddressToString -notlike '169.254.*' }
+                if ($ips) { $localIp = $ips[0].IPAddressToString }
+            } catch { }
+
+            $port = 8088
+            $shareUrl = "http://$($localIp):$port/$([Uri]::EscapeDataString($fileName))"
+            $qrUrlText.Text = $shareUrl
+
+            # Start lightweight background TCP server
+            try {
+                if ($null -ne $script:fileServer) { $script:fileServer.Stop() }
+                $script:fileServer = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Any, $port)
+                $script:fileServer.Start()
+
+                [System.Threading.ThreadPool]::QueueUserWorkItem({
+                    try {
+                        $client = $script:fileServer.AcceptTcpClient()
+                        $stream = $client.GetStream()
+                        $bytes = [System.IO.File]::ReadAllBytes($filePath)
+                        $header = "HTTP/1.1 200 OK`r`nContent-Disposition: attachment; filename=`"$fileName`"`r`nContent-Length: $($bytes.Length)`r`nContent-Type: application/octet-stream`r`nConnection: close`r`n`r`n"
+                        $hBytes = [System.Text.Encoding]::ASCII.GetBytes($header)
+                        $stream.Write($hBytes, 0, $hBytes.Length)
+                        $stream.Write($bytes, 0, $bytes.Length)
+                        $stream.Flush()
+                        $client.Close()
+                    } catch { }
+                })
+            } catch { }
+
+            # Fetch or generate QR Code
+            try {
+                $qrApiUrl = "https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=$([Uri]::EscapeDataString($shareUrl))"
+                $bi = New-Object System.Windows.Media.Imaging.BitmapImage
+                $bi.BeginInit()
+                $bi.UriSource = New-Object Uri($qrApiUrl)
+                $bi.EndInit()
+                $qrCodeImage.Source = $bi
+            } catch { }
+
+            # Show Overlay
+            $qrShareOverlay.Visibility = 'Visible'
+            $anim = New-Object System.Windows.Media.Animation.DoubleAnimation(1.0, [TimeSpan]::FromMilliseconds(180))
+            $qrShareOverlay.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $anim)
+        }
+    }
+})
+
+$btnQrCopyLink.Add_Click({
+    try {
+        [System.Windows.Clipboard]::SetText($qrUrlText.Text)
+        $btnQrCopyLink.Content = 'Copied!'
+    } catch { }
+})
+
+$btnQrClose.Add_Click({
+    $anim = New-Object System.Windows.Media.Animation.DoubleAnimation(0.0, [TimeSpan]::FromMilliseconds(150))
+    $anim.Add_Completed({ $qrShareOverlay.Visibility = 'Collapsed' })
+    $qrShareOverlay.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $anim)
+    try {
+        if ($null -ne $script:fileServer) { $script:fileServer.Stop(); $script:fileServer = $null }
+    } catch { }
+})
+
+# 3. Global Mic Mute Handler
+function Toggle-MicMute {
+    $script:isMicMuted = [IslandNative]::ToggleMicrophone()
+    Update-MicStatusUI
+}
+
+function Update-MicStatusUI {
+    $bc = New-Object System.Windows.Media.BrushConverter
+    if ($script:isMicMuted) {
+        $redBrush = $bc.ConvertFromString($Config.ColorRed); $redBrush.Freeze()
+        $brandDot.Fill = $redBrush
+        $compactMicDot.Fill = $redBrush
+        $micStatusText.Text = 'Mic Muted'
+        $micStatusText.Foreground = $redBrush
+        $compactCallText.Text = 'Muted'
+        $compactCallText.Foreground = $redBrush
+    } else {
+        $greenBrush = $bc.ConvertFromString($Config.ColorGreen); $greenBrush.Freeze()
+        $brandDot.Fill = $greenBrush
+        $compactMicDot.Fill = $greenBrush
+        $min = [math]::Floor($script:micSeconds / 60)
+        $sec = ($script:micSeconds % 60).ToString('00')
+        $micStatusText.Text = "Live $min`:$sec"
+        $micStatusText.Foreground = $greenBrush
+        $compactCallText.Text = "$min`:$sec"
+        $compactCallText.Foreground = $greenBrush
+    }
+}
+
+$micStatusPill.Add_MouseLeftButtonDown({ Toggle-MicMute })
+
+# ------------------------------------------------------------------------------
+#  S8  CUSTOMIZATION CONTROLLER (Swatches, Hex Input, Aura & Tab Toggles)
 # ------------------------------------------------------------------------------
 function Apply-AuraTheme ([string]$hexColor) {
     if (-not ($hexColor -match '^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{8})$')) { return }
@@ -1524,7 +1853,6 @@ function Apply-AuraTheme ([string]$hexColor) {
     $color = [System.Windows.Media.ColorConverter]::ConvertFromString($hexColor)
 
     $islandGlow.Color = $color
-    $brandDot.Fill = $brush
     $compactIcon.Foreground = $brush
     $inputHexColor.Text = $hexColor
 
@@ -1532,7 +1860,7 @@ function Apply-AuraTheme ([string]$hexColor) {
     Save-Config
 }
 
-# Swatch Button Visual Setup
+# Swatch Buttons
 $swatches = @($btnColorPurple, $btnColorCyan, $btnColorPink, $btnColorEmerald, $btnColorAmber, $btnColorRed)
 foreach ($sw in $swatches) {
     $hex = [string]$sw.Tag
@@ -1551,7 +1879,7 @@ foreach ($sw in $swatches) {
     $sw.Add_Click({ Apply-AuraTheme ($this.Tag) })
 }
 
-# Editable Hex Code Input
+# Editable Hex Input
 $inputHexColor.Add_KeyDown({
     param($s, $e)
     if ($e.Key -eq [System.Windows.Input.Key]::Enter) {
@@ -1624,13 +1952,27 @@ $btnPin.Add_Click({
 })
 
 # ------------------------------------------------------------------------------
-#  S8  INTERACTIVE CONTROLS & MEDIA ACTIONS
+#  S9  INTERACTIVE CONTROLS & MEDIA ACTIONS
 # ------------------------------------------------------------------------------
-# Master Volume Slider
-$sliderMasterVolume.Value = [IslandNative]::GetMasterVolume()
-$textMasterVolumeVal.Text = [string][int]$sliderMasterVolume.Value
+# Master Volume Sliders
+$initVol = [IslandNative]::GetMasterVolume()
+$sliderMasterVolume.Value = $initVol
+$textMasterVolumeVal.Text = [string]$initVol
+$sliderMediaVolume.Value = $initVol
+$textMediaVolumeVal.Text = "${initVol}%"
+
 $sliderMasterVolume.Add_ValueChanged({
     $v = [int]$sliderMasterVolume.Value
+    $textMasterVolumeVal.Text = [string]$v
+    $sliderMediaVolume.Value = $v
+    $textMediaVolumeVal.Text = "${v}%"
+    [IslandNative]::SetMasterVolume($v)
+})
+
+$sliderMediaVolume.Add_ValueChanged({
+    $v = [int]$sliderMediaVolume.Value
+    $textMediaVolumeVal.Text = "${v}%"
+    $sliderMasterVolume.Value = $v
     $textMasterVolumeVal.Text = [string]$v
     [IslandNative]::SetMasterVolume($v)
 })
@@ -1697,9 +2039,8 @@ $tilePowerShutdown.Add_MouseLeftButtonDown({
 })
 
 # ------------------------------------------------------------------------------
-#  S9  EVENT TRIGGERS: HOVER, FREE DRAG & HARDWARE VOLUME SCROLL
+#  S10  EVENT TRIGGERS: HOVER, FREE DRAG & HARDWARE VOLUME SCROLL
 # ------------------------------------------------------------------------------
-# Visual Tree Traversal: Safe Click Isolation
 function Test-IsInteractiveControl ($source) {
     if ($null -eq $source) { return $false }
     $current = $source
@@ -1709,7 +2050,8 @@ function Test-IsInteractiveControl ($source) {
             $current -is [System.Windows.Controls.Primitives.Thumb] -or
             $current -is [System.Windows.Controls.TextBox] -or
             $current -is [System.Windows.Controls.CheckBox] -or
-            $current -is [System.Windows.Controls.MenuItem]) {
+            $current -is [System.Windows.Controls.MenuItem] -or
+            $current -is [System.Windows.Controls.WebBrowser]) {
             return $true
         }
         if ($current -is [System.Windows.Media.Visual] -or $current -is [System.Windows.Media.Media3D.Visual3D]) {
@@ -1725,7 +2067,7 @@ $leaveTimer = New-Object System.Windows.Threading.DispatcherTimer
 $leaveTimer.Interval = [TimeSpan]::FromMilliseconds($Config.CollapseDelay)
 $leaveTimer.Add_Tick({
     $leaveTimer.Stop()
-    if (-not $script:isDragging -and -not $glowBorder.IsMouseOver -and -not $window.IsMouseOver) {
+    if (-not $script:isDragging -and -not $glowBorder.IsMouseOver -and -not $window.IsMouseOver -and -not $script:drawerOpen) {
         Collapse-Island
     }
 })
@@ -1738,7 +2080,7 @@ $glowBorder.Add_MouseEnter({
 })
 
 $glowBorder.Add_MouseLeave({
-    if (-not $script:isDragging -and -not $script:pinned) { $leaveTimer.Start() }
+    if (-not $script:isDragging -and -not $script:pinned -and -not $script:drawerOpen) { $leaveTimer.Start() }
 })
 
 $expandedCard.Add_MouseEnter({
@@ -1765,7 +2107,9 @@ if ($Config.EnableVolumeScroll) {
         param($sender, $e)
         if ($e.Delta -gt 0) { [IslandNative]::VolumeUp() }
         else { [IslandNative]::VolumeDown() }
-        $sliderMasterVolume.Value = [IslandNative]::GetMasterVolume()
+        $v = [IslandNative]::GetMasterVolume()
+        $sliderMasterVolume.Value = $v
+        $sliderMediaVolume.Value = $v
         $e.Handled = $true
     })
 }
@@ -1775,7 +2119,7 @@ $script:autoCollapseTimer.Interval = [TimeSpan]::FromMilliseconds($Config.MediaP
 $script:autoCollapseTimer.Add_Tick({
     $script:autoCollapseTimer.Stop()
     $script:mediaAutoShown = $false
-    if ($script:expanded -and -not $script:pinned -and -not $glowBorder.IsMouseOver -and -not $window.IsMouseOver) {
+    if ($script:expanded -and -not $script:pinned -and -not $glowBorder.IsMouseOver -and -not $window.IsMouseOver -and -not $script:drawerOpen) {
         Collapse-Island
     }
 })
@@ -1797,11 +2141,16 @@ if ($null -ne $menuQuit) {
 # Cleanup on Close
 $window.Add_Closed({
     $script:sharedState.IsRunning = $false
+    try {
+        $hwnd = (New-Object System.Windows.Interop.WindowInteropHelper($window)).Handle
+        [IslandNative]::UnregisterHotKey($hwnd, 9001)
+    } catch { }
     try { $script:bgRunspace.Dispose() } catch { }
+    try { if ($script:fileServer) { $script:fileServer.Stop() } } catch { }
 })
 
 # ------------------------------------------------------------------------------
-#  S10  HIGH-FREQUENCY UI DISPATCHER LOOP (Synchronized Telemetry)
+#  S11  HIGH-FREQUENCY UI DISPATCHER LOOP (Synchronized Telemetry)
 # ------------------------------------------------------------------------------
 $bc = New-Object System.Windows.Media.BrushConverter
 $script:brushGreen = $bc.ConvertFromString($Config.ColorGreen); $script:brushGreen.Freeze()
@@ -1837,7 +2186,6 @@ function Update-ClockAndBattery {
         $todayGreetingIcon.Text = [string][char]0xE708
     }
 
-    # Battery Query
     $p = [System.Windows.Forms.SystemInformation]::PowerStatus
     $bPct = [int][math]::Round($p.BatteryLifePercent * 100.0)
     if ($bPct -le 0) { $bPct = 100 }
@@ -1849,18 +2197,27 @@ function Update-ClockAndBattery {
     $chargeStr = if ($isCharging) { "Charging · Connected to Power" } else { "Discharging · On Battery" }
     $todayBatteryState.Text = $chargeStr
 
-    # Radial Battery Arc
     $todayBatteryArc.Data = [System.Windows.Media.Geometry]::Parse((Get-ArcPath 22 22 18 $bPct))
     $todayBatteryArc.Stroke = if ($bPct -le 20) { $script:brushRed } elseif ($bPct -le 40) { $script:brushAmber } else { $script:brushGreen }
     $todayBatteryCenterIcon.Text = if ($isCharging) { [string][char]0xE945 } else { [string][char]0xE915 }
     $todayBatteryCenterIcon.Foreground = $todayBatteryArc.Stroke
 }
 
+# 1-Second Timer for Call / Mic Duration
+$callTimer = New-Object System.Windows.Threading.DispatcherTimer
+$callTimer.Interval = [TimeSpan]::FromSeconds(1)
+$callTimer.Add_Tick({
+    if (-not $script:isMicMuted) {
+        $script:micSeconds++
+        Update-MicStatusUI
+    }
+})
+$callTimer.Start()
+
 # 50ms High-Performance Dispatcher Loop
 $uiTimer = New-Object System.Windows.Threading.DispatcherTimer
 $uiTimer.Interval = [TimeSpan]::FromMilliseconds(50)
 $uiTimer.Add_Tick({
-    # Clock & Greeting
     Update-ClockAndBattery
 
     # Telemetry Snapshot
@@ -1875,6 +2232,15 @@ $uiTimer.Add_Tick({
     $ramTot  = $script:sharedState.RamTotalGB
 
     $compactCpuText.Text = "CPU $cpu%"
+
+    # Dynamic Thermal Aura Shifting
+    if ($cpuTemp -ge 85 -or $gpuTemp -ge 85) {
+        $islandGlow.Color = [System.Windows.Media.ColorConverter]::ConvertFromString($Config.ColorRed)
+    } elseif ($cpuTemp -ge 75 -or $gpuTemp -ge 75) {
+        $islandGlow.Color = [System.Windows.Media.ColorConverter]::ConvertFromString($Config.ColorAmber)
+    } else {
+        $islandGlow.Color = [System.Windows.Media.ColorConverter]::ConvertFromString($Config.GlowColor)
+    }
 
     # Tab 1: Today Mini Bars
     $todayCpuPct.Text = "$cpu%"
@@ -1913,11 +2279,24 @@ $uiTimer.Add_Tick({
     $tileDisplaySub.Text   = "$($script:sharedState.BrightnessVal)%"
     $textPowerUptime.Text  = "$($script:sharedState.UptimeText) $midDot $($script:sharedState.LastRestartText)"
 
-    # Tab 2: Media Player
+    # Tab 2: Media Player & Active Visualizer
     $title  = $script:sharedState.MediaTitle
     $artist = $script:sharedState.MediaArtist
     $status = $script:sharedState.MediaStatus
     $dev    = $script:sharedState.MediaDevice
+
+    $isPlaying = ($status -eq 'Playing')
+    if ($isPlaying) {
+        $script:visPhase += 0.35
+        for ($i = 0; $i -lt 8; $i++) {
+            $h = [math]::Max([math]::Min((([math]::Sin($script:visPhase + ($i * 0.75)) * 9.0) + 14.0), 24.0), 4.0)
+            $visBars[$i].Height = $h
+        }
+    } else {
+        for ($i = 0; $i -lt 8; $i++) {
+            $visBars[$i].Height = 3.0
+        }
+    }
 
     if ($title -eq '' -or $status -eq 'None') {
         $mediaTitleText.Text  = "No Media Playing"
@@ -1929,10 +2308,9 @@ $uiTimer.Add_Tick({
         $mediaTitleText.Text  = $title
         $mediaArtistText.Text = if ($artist) { $artist } else { "Playing" }
         $mediaDeviceText.Text = $dev
-        $btnMediaPlay.Content = if ($status -eq 'Playing') { [string][char]0xE769 } else { [string][char]0xE768 }
+        $btnMediaPlay.Content = if ($isPlaying) { [string][char]0xE769 } else { [string][char]0xE768 }
         $compactIcon.Text     = [string][char]0xE8D6
 
-        # Auto-popup on track change
         if ($title -ne $script:lastMediaTitle -and $title -ne '' -and -not $script:expanded) {
             $script:lastMediaTitle = $title
             $script:mediaAutoShown = $true
@@ -1946,13 +2324,12 @@ $uiTimer.Add_Tick({
     $mediaTimeCurrent.Text = $script:sharedState.MediaPosition
     $mediaTimeTotal.Text   = $script:sharedState.MediaDuration
 
-    # Scrubber Progress Bar Width
     $trackW = $mediaTrackContainer.ActualWidth
     if ($trackW -le 10) { $trackW = 460 }
     $progPct = [double]$script:sharedState.MediaProgress
     $mediaProgressLine.Width = [math]::Max([math]::Min(($trackW * $progPct), $trackW), 4)
 
-    # Album Art Image Loader
+    # Album Art Loader
     $artBytes = $script:sharedState.AlbumArtBytes
     if ($null -ne $artBytes -and $artBytes.Length -gt 0) {
         if ($artBytes -ne $script:currentArtBytes) {
@@ -1976,9 +2353,33 @@ $uiTimer.Add_Tick({
 })
 
 # ------------------------------------------------------------------------------
-#  S11  STARTUP INITIALIZATION & SHOW
+#  S12  STARTUP: ACRYLIC BACKDROP & GLOBAL HOTKEY REGISTRATION
 # ------------------------------------------------------------------------------
+$window.Add_SourceInitialized({
+    try {
+        $hwnd = (New-Object System.Windows.Interop.WindowInteropHelper($window)).Handle
+        # 1. Enable Native Windows 11 Acrylic Glass Backdrop
+        [IslandNative]::EnableAcrylic($hwnd, 0x880E0E13)
+
+        # 2. Register Global Hotkey (Ctrl + Alt + M)
+        # fsModifiers: MOD_ALT(0x1) | MOD_CONTROL(0x2) = 0x3, VK_M = 0x4D
+        [IslandNative]::RegisterHotKey($hwnd, 9001, 0x0003, 0x4D)
+
+        # 3. Hook Window Messages for WM_HOTKEY
+        $source = [System.Windows.Interop.HwndSource]::FromHwnd($hwnd)
+        $source.AddHook({
+            param($h, $m, $w, $l, [ref]$handled)
+            if ($m -eq 0x0312 -and $w.ToInt32() -eq 9001) {
+                Toggle-MicMute
+                $handled = $true
+            }
+        })
+    } catch { }
+})
+
 Update-ClockAndBattery
+$script:isMicMuted = [IslandNative]::IsMicrophoneMuted()
+Update-MicStatusUI
 Switch-Tab 'Today'
 $uiTimer.Start()
 
