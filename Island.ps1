@@ -530,7 +530,7 @@ $xaml = [xml]@"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="DynamicIsland"
-        Width="$($Config.WindowWidth)" Height="52"
+        Width="$($Config.WindowWidth)" Height="$($Config.WindowHeight)"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         Topmost="True" ShowInTaskbar="False"
         ResizeMode="NoResize" WindowStartupLocation="Manual">
@@ -650,7 +650,7 @@ $xaml = [xml]@"
   <Grid HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,$($Config.ScreenTopMargin),0,0">
     <!-- Outer Interactive Island Shell with Acrylic Blur Layer -->
     <Border x:Name="GlowBorder"
-            Width="$($Config.IslandWidth)" Height="$($Config.IslandHeight)"
+            Width="$($Config.IslandWidth)" Height="$($Config.IslandHeight)" VerticalAlignment="Top"
             Background="$($Config.Surface)"
             BorderBrush="$($Config.BorderColor)" BorderThickness="1"
             CornerRadius="$($Config.CornerRadius)"
@@ -744,7 +744,7 @@ $xaml = [xml]@"
           <!-- =============================================================== -->
           <!--  1. TODAY TAB (Hero Clock + Radial Battery & 3 Mini Bars)       -->
           <!-- =============================================================== -->
-          <Grid x:Name="ViewToday" Grid.Row="1">
+          <Grid x:Name="ViewToday">
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="1.15*"/>
               <ColumnDefinition Width="1.35*"/>
@@ -851,7 +851,7 @@ $xaml = [xml]@"
           <!-- =============================================================== -->
           <!--  2. MEDIA TAB (v0 Hero Track Player + 8-Bar Dynamic Equalizer)  -->
           <!-- =============================================================== -->
-          <Grid x:Name="ViewMedia" Grid.Row="1" Visibility="Collapsed">
+          <Grid x:Name="ViewMedia" Visibility="Collapsed">
             <Border Background="$($Config.CardColor)" CornerRadius="16" Padding="16,14" Margin="2,0">
               <Grid>
                 <Grid.RowDefinitions>
@@ -992,7 +992,7 @@ $xaml = [xml]@"
           <!-- =============================================================== -->
           <!--  3. STATS TAB (3 Radial Ring Cards + Dedicated Live Thermals)   -->
           <!-- =============================================================== -->
-          <Grid x:Name="ViewStats" Grid.Row="1" Visibility="Collapsed">
+          <Grid x:Name="ViewStats" Visibility="Collapsed">
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="*"/>
               <ColumnDefinition Width="*"/>
@@ -1059,7 +1059,7 @@ $xaml = [xml]@"
           <!-- =============================================================== -->
           <!--  4. CONTROLS TAB (Hero Volume Slider + 4 Quick Action Tiles)    -->
           <!-- =============================================================== -->
-          <Grid x:Name="ViewControls" Grid.Row="1" Visibility="Collapsed">
+          <Grid x:Name="ViewControls" Visibility="Collapsed">
             <Grid.RowDefinitions>
               <RowDefinition Height="Auto"/>
               <RowDefinition Height="Auto"/>
@@ -1148,7 +1148,7 @@ $xaml = [xml]@"
           <!-- =============================================================== -->
           <!--  5. POWER TAB (4 Hero Action Tiles + System Uptime Footer)      -->
           <!-- =============================================================== -->
-          <Grid x:Name="ViewPower" Grid.Row="1" Visibility="Collapsed">
+          <Grid x:Name="ViewPower" Visibility="Collapsed">
             <Grid.RowDefinitions>
               <RowDefinition Height="Auto"/>
               <RowDefinition Height="Auto"/>
@@ -1218,7 +1218,7 @@ $xaml = [xml]@"
           <!-- =============================================================== -->
           <!--  6. SETTINGS TAB (Swatches, Hex Input, Aura Sliders & Tabs)     -->
           <!-- =============================================================== -->
-          <Grid x:Name="ViewSettings" Grid.Row="1" Visibility="Collapsed">
+          <Grid x:Name="ViewSettings" Visibility="Collapsed">
             <StackPanel Margin="2,0">
               <Border Background="$($Config.CardColor)" CornerRadius="16" Padding="14,10" Margin="0,0,0,6">
                 <Grid>
@@ -1607,13 +1607,16 @@ function Get-ArcPath ([double]$cx, [double]$cy, [double]$r, [double]$pct) {
 
 function Animate-Height ([double]$targetHeight) {
     try {
-        $anim = New-Object System.Windows.Media.Animation.DoubleAnimation
-        $anim.To = $targetHeight
-        $anim.Duration = [TimeSpan]::FromSeconds(0.2)
-        $anim.EasingFunction = New-Object System.Windows.Media.Animation.CubicEase -Property @{ EasingMode = [System.Windows.Media.Animation.EasingMode]::EaseOut }
-        $window.BeginAnimation([System.Windows.Window]::HeightProperty, $anim)
+        if ($window.Height -lt ($targetHeight + 80)) {
+            $window.Height = $targetHeight + 80
+        }
+        $animH = New-Object System.Windows.Media.Animation.DoubleAnimation
+        $animH.To = $targetHeight
+        $animH.Duration = [TimeSpan]::FromSeconds(0.2)
+        $animH.EasingFunction = New-Object System.Windows.Media.Animation.CubicEase -Property @{ EasingMode = [System.Windows.Media.Animation.EasingMode]::EaseOut }
+        $glowBorder.BeginAnimation([System.Windows.Controls.Border]::HeightProperty, $animH)
     } catch {
-        $window.Height = $targetHeight
+        $glowBorder.Height = $targetHeight
     }
 }
 
