@@ -31,11 +31,11 @@
                  "Controls":  true,
                  "Power":  true
              },
-    "X":  576,
-    "Y":  12,
+    "X":  573,
+    "Y":  38,
     "MediaPopupMs":  4000,
     "GlassMode":  true,
-    "DockEdge":  "Top",
+    "DockEdge":  "Custom",
     "Apps":  [
                  {
                      "Name":  "VS Code",
