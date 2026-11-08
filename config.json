@@ -1,36 +1,90 @@
-{
-    "IslandWidth": 255,
-    "IslandHeight": 38,
-    "ExpandedWidth": 530,
-    "WindowWidth": 570,
-    "WindowHeight": 380,
-    "ScreenTopMargin": 8,
-    "CornerRadius": 24,
-    "Surface": "#0E0E13",
-    "CardColor": "#16161D",
-    "InnerTileColor": "#1A1A24",
-    "BorderColor": "#22222E",
-    "TextColor": "#F4F4F6",
-    "SubtextColor": "#9B9BA7",
-    "GlowColor": "#A78BFA",
-    "GlowRadius": 32,
-    "GlowOpacity": 0.55,
-    "ColorGreen": "#34D399",
-    "ColorAmber": "#FBBF24",
-    "ColorRed": "#F87171",
-    "ExpandMs": 220,
-    "CollapseMs": 200,
-    "CollapseDelay": 320,
-    "MediaPopupMs": 4000,
-    "Pinned": false,
-    "EnableVolumeScroll": true,
-    "Tabs": {
-        "Stats": true,
-        "Today": true,
-        "Controls": true,
-        "Power": true,
-        "Media": true
-    },
-    "X": 572,
-    "Y": 8
+﻿{
+    "IslandWidth":  330,
+    "IslandHeight":  38,
+    "ExpandedWidth":  520,
+    "WindowWidth":  560,
+    "WindowHeight":  360,
+    "ScreenTopMargin":  26,
+    "CornerRadius":  24,
+    "Surface":  "#CC0D111A",
+    "CardColor":  "#16161D",
+    "InnerTileColor":  "#1A1A24",
+    "BorderColor":  "#2AFFFFFF",
+    "TextColor":  "#FFFFFF",
+    "SubtextColor":  "#9B9BA7",
+    "GlowColor":  "#FFFFFF",
+    "GlowRadius":  32,
+    "GlowOpacity":  0.25,
+    "ColorGreen":  "#34D399",
+    "ColorAmber":  "#FBBF24",
+    "ColorRed":  "#F87171",
+    "ExpandMs":  220,
+    "CollapseMs":  200,
+    "CollapseDelay":  320,
+    "Pinned":  true,
+    "EnableVolumeScroll":  true,
+    "Tabs":  {
+                 "Today":  true,
+                 "Apps":  true,
+                 "Media":  true,
+                 "Stats":  true,
+                 "Controls":  true,
+                 "Power":  true
+             },
+    "X":  576,
+    "Y":  12,
+    "MediaPopupMs":  4000,
+    "GlassMode":  true,
+    "DockEdge":  "Top",
+    "Apps":  [
+                 {
+                     "Name":  "VS Code",
+                     "Path":  "C:\\Users\\abhis\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe",
+                     "Arguments":  "",
+                     "Category":  "Development",
+                     "Pinned":  true
+                 },
+                 {
+                     "Name":  "Terminal",
+                     "Path":  "C:\\Users\\abhis\\AppData\\Local\\Microsoft\\WindowsApps\\wt.exe",
+                     "Arguments":  "",
+                     "Category":  "Development",
+                     "Pinned":  true
+                 },
+                 {
+                     "Name":  "Spotify",
+                     "Path":  "C:\\Users\\abhis\\AppData\\Local\\Microsoft\\WindowsApps\\Spotify.exe",
+                     "Arguments":  "",
+                     "Category":  "Media",
+                     "Pinned":  true
+                 },
+                 {
+                     "Name":  "File Explorer",
+                     "Path":  "explorer.exe",
+                     "Arguments":  "",
+                     "Category":  "System",
+                     "Pinned":  true
+                 },
+                 {
+                     "Name":  "Task Manager",
+                     "Path":  "taskmgr.exe",
+                     "Arguments":  "",
+                     "Category":  "System",
+                     "Pinned":  true
+                 },
+                 {
+                     "Name":  "RiotClientServices",
+                     "Path":  "C:\\Riot Games\\Riot Client\\RiotClientServices.exe",
+                     "Arguments":  "",
+                     "Category":  "Custom",
+                     "Pinned":  true
+                 },
+                 {
+                     "Name":  "Steam",
+                     "Path":  "C:\\Program Files (x86)\\Steam\\Steam.exe",
+                     "Arguments":  "",
+                     "Category":  "Custom",
+                     "Pinned":  true
+                 }
+             ]
 }

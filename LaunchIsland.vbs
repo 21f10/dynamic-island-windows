@@ -35,7 +35,7 @@ End If
 '   False    -- don't wait for the process to finish
 Dim objShell
 Set objShell = CreateObject("WScript.Shell")
-objShell.Run "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File """ & strIslandPs1 & """", 0, False
+objShell.Run "powershell.exe -STA -NoProfile -ExecutionPolicy Bypass -File """ & strIslandPs1 & """", 0, False
 
 ' --- Clean up -------------------------------------------------------------------
 Set objShell = Nothing

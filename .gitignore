@@ -8,6 +8,8 @@ $RECYCLE.BIN/
 *.log
 *.tmp
 *.bak
+.island.pid
+Screenshots/Screenshot_*.png
 
 # IDE & Editor Directories
 .vscode/

@@ -1,42 +1,62 @@
-﻿{
-    "X":  null,
-    "Y":  null,
-    "IslandWidth":  255,
-    "IslandHeight":  38,
-    "ExpandedWidth":  500,
-    "ExpandedHeight":  265,
-    "CornerRadius":  22,
-    "ScreenTopMargin":  8,
-    "GlowColor":  "#00E5FF",
-    "GlowRadius":  26,
-    "GlowOpacity":  0.55,
-    "BackgroundColor":  "#F50F0F14",
-    "CardColor":  "#14141E",
-    "CardBorderColor":  "#25FFFFFF",
-    "TextColor":  "#FFFFFFFF",
-    "SubtextColor":  "#FFA0A0B2",
-    "AccentPurple":  "#FFA855F7",
-    "AccentGreen":  "#FF10B981",
-    "WarnColor":  "#FFFF9100",
-    "CritColor":  "#FFFF1744",
-    "ExpandMs":  240,
-    "CollapseMs":  200,
-    "CollapseDelay":  320,
-    "MediaPopupMs":  4000,
-    "Tabs":  {
-                 "Today":  true,
-                 "Media":  true,
-                 "Stats":  true,
-                 "Controls":  true,
-                 "Power":  true
-             },
-    "StatsModules":  {
-                         "Cpu":  true,
-                         "Gpu":  true,
-                         "Ram":  true,
-                         "Battery":  true
-                     },
-    "EnableSMTC":  true,
-    "EnableDynamicGlow":  true,
-    "EnableVolumeScroll":  true
+{
+    "IslandWidth": 330,
+    "IslandHeight": 38,
+    "ExpandedWidth": 520,
+    "WindowWidth": 560,
+    "WindowHeight": 360,
+    "ScreenTopMargin": 26,
+    "CornerRadius": 24,
+    "Surface": "#CC0D111A",
+    "CardColor": "#16161D",
+    "InnerTileColor": "#1A1A24",
+    "BorderColor": "#2AFFFFFF",
+    "TextColor": "#FFFFFF",
+    "SubtextColor": "#9B9BA7",
+    "GlowColor": "#00E5FF",
+    "GlowRadius": 32,
+    "GlowOpacity": 0.45,
+    "ColorGreen": "#34D399",
+    "ColorAmber": "#FBBF24",
+    "ColorRed": "#F87171",
+    "ExpandMs": 220,
+    "CollapseMs": 200,
+    "CollapseDelay": 320,
+    "Pinned": false,
+    "EnableVolumeScroll": true,
+    "Tabs": {
+        "Today": true,
+        "Apps": true,
+        "Media": true,
+        "Stats": true,
+        "Controls": true,
+        "Power": true
+    },
+    "X": null,
+    "Y": null,
+    "MediaPopupMs": 4000,
+    "GlassMode": true,
+    "DockEdge": "Top",
+    "Apps": [
+        {
+            "Name": "VS Code",
+            "Path": "code",
+            "Arguments": "",
+            "Category": "Development",
+            "Pinned": true
+        },
+        {
+            "Name": "Terminal",
+            "Path": "wt.exe",
+            "Arguments": "",
+            "Category": "Tools",
+            "Pinned": true
+        },
+        {
+            "Name": "Spotify",
+            "Path": "spotify",
+            "Arguments": "",
+            "Category": "Media",
+            "Pinned": true
+        }
+    ]
 }
