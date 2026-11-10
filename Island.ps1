@@ -2236,6 +2236,16 @@ $xaml = [xml]@"
 "@
 
 
+
+$script:brushConv = New-Object System.Windows.Media.BrushConverter
+function Get-Brush([string]$hex) {
+    try {
+        return [System.Windows.Media.SolidColorBrush]($script:brushConv.ConvertFromString($hex))
+    } catch {
+        return [System.Windows.Media.Brushes]::Transparent
+    }
+}
+
 # ------------------------------------------------------------------------------
 #  WPF Window Realization & Element Resolution
 # ------------------------------------------------------------------------------
@@ -2521,8 +2531,8 @@ function Show-UrlFavoritesWindow {
             if ($filter -and $fav.Title -notmatch "(?i)$filter" -and $fav.Url -notmatch "(?i)$filter") { continue }
 
             $card = New-Object System.Windows.Controls.Border
-            $card.Background = [System.Windows.Media.ColorConverter]::ConvertFromString("#16161D")
-            $card.BorderBrush = [System.Windows.Media.ColorConverter]::ConvertFromString("#1AFFFFFF")
+            $card.Background = Get-Brush "#16161D"
+            $card.BorderBrush = Get-Brush "#1AFFFFFF"
             $card.BorderThickness = New-Object System.Windows.Thickness(1)
             $card.CornerRadius = New-Object System.Windows.CornerRadius(10)
             $card.Padding = New-Object System.Windows.Thickness(10, 8, 10, 8)
@@ -2546,7 +2556,7 @@ function Show-UrlFavoritesWindow {
 
             $sp = New-Object System.Windows.Controls.StackPanel
             $t = New-Object System.Windows.Controls.TextBlock; $t.Text = $fav.Title; $t.FontSize = 11; $t.FontWeight = 'Bold'; $t.Foreground = [System.Windows.Media.Brushes]::White
-            $u = New-Object System.Windows.Controls.TextBlock; $u.Text = $fav.Url; $u.FontSize = 9; $u.Foreground = [System.Windows.Media.ColorConverter]::ConvertFromString("#64748B")
+            $u = New-Object System.Windows.Controls.TextBlock; $u.Text = $fav.Url; $u.FontSize = 9; $u.Foreground = Get-Brush "#64748B"
             [void]$sp.Children.Add($t); [void]$sp.Children.Add($u)
             [System.Windows.Controls.Grid]::SetColumn($sp, 1)
             [void]$g.Children.Add($sp)
@@ -2554,7 +2564,7 @@ function Show-UrlFavoritesWindow {
             $catBadge = New-Object System.Windows.Controls.TextBlock
             $catBadge.Text = $fav.Category
             $catBadge.FontSize = 9
-            $catBadge.Foreground = [System.Windows.Media.ColorConverter]::ConvertFromString("#22D3EE")
+            $catBadge.Foreground = Get-Brush "#22D3EE"
             $catBadge.VerticalAlignment = 'Center'
             [System.Windows.Controls.Grid]::SetColumn($catBadge, 2)
             [void]$g.Children.Add($catBadge)
@@ -2675,7 +2685,7 @@ function Show-CalendarWindow {
     $dayNames = @("Su", "Mo", "Tu", "We", "Th", "Fr", "Sa")
     foreach ($d in $dayNames) {
         $lbl = New-Object System.Windows.Controls.TextBlock
-        $lbl.Text = $d; $lbl.FontSize = 10; $lbl.FontWeight = 'Bold'; $lbl.Foreground = [System.Windows.Media.ColorConverter]::ConvertFromString("#64748B")
+        $lbl.Text = $d; $lbl.FontSize = 10; $lbl.FontWeight = 'Bold'; $lbl.Foreground = Get-Brush "#64748B"
         $lbl.HorizontalAlignment = 'Center'; $lbl.Margin = New-Object System.Windows.Thickness(0, 0, 0, 4)
         [void]$daysGrid.Children.Add($lbl)
     }
@@ -2696,7 +2706,7 @@ function Show-CalendarWindow {
             $txt.HorizontalAlignment = 'Center'; $txt.VerticalAlignment = 'Center'
 
             if ($dayNum -eq $todayDay) {
-                $cell.Background = [System.Windows.Media.ColorConverter]::ConvertFromString("#A78BFA")
+                $cell.Background = Get-Brush "#A78BFA"
                 $txt.Foreground = [System.Windows.Media.Brushes]::Black
                 $txt.FontWeight = 'Bold'
             } else {
@@ -2714,7 +2724,7 @@ function Show-CalendarWindow {
         if ($data -and $data.CalendarEvents) {
             foreach ($ev in $data.CalendarEvents) {
                 $p = New-Object System.Windows.Controls.Border
-                $p.Background = [System.Windows.Media.ColorConverter]::ConvertFromString("#1A1A24")
+                $p.Background = Get-Brush "#1A1A24"
                 $p.CornerRadius = New-Object System.Windows.CornerRadius(6)
                 $p.Padding = New-Object System.Windows.Thickness(8, 4, 8, 4)
                 $p.Margin = New-Object System.Windows.Thickness(0, 0, 0, 4)
@@ -2830,8 +2840,8 @@ function Show-ClipboardWindow {
             if ($filter -and $clip.Text -notmatch "(?i)$filter") { continue }
 
             $b = New-Object System.Windows.Controls.Border
-            $b.Background = [System.Windows.Media.ColorConverter]::ConvertFromString("#16161D")
-            $b.BorderBrush = [System.Windows.Media.ColorConverter]::ConvertFromString("#1AFFFFFF")
+            $b.Background = Get-Brush "#16161D"
+            $b.BorderBrush = Get-Brush "#1AFFFFFF"
             $b.BorderThickness = New-Object System.Windows.Thickness(1)
             $b.CornerRadius = New-Object System.Windows.CornerRadius(8)
             $b.Padding = New-Object System.Windows.Thickness(10, 8, 10, 8)
@@ -2850,7 +2860,7 @@ function Show-ClipboardWindow {
             $tm = New-Object System.Windows.Controls.TextBlock
             $tm.Text = "Copied at $($clip.Time)"
             $tm.FontSize = 8
-            $tm.Foreground = [System.Windows.Media.ColorConverter]::ConvertFromString("#64748B")
+            $tm.Foreground = Get-Brush "#64748B"
             $tm.Margin = New-Object System.Windows.Thickness(0, 2, 0, 0)
 
             [void]$sp.Children.Add($txt); [void]$sp.Children.Add($tm)
@@ -2936,7 +2946,7 @@ function Set-IslandState ([string]$newState) {
             $containerStateExpanded.Visibility    = 'Collapsed'
             $containerStateMaxExpanded.Visibility = 'Collapsed'
             $gameModeBar.Visibility               = 'Collapsed'
-            $glowBorder.Background = [System.Windows.Media.ColorConverter]::ConvertFromString("#000000")
+            $glowBorder.Background = Get-Brush "#000000"
         }
         "Hover" {
             $targetW = 440.0
@@ -2950,7 +2960,7 @@ function Set-IslandState ([string]$newState) {
             $containerStateExpanded.Visibility    = 'Collapsed'
             $containerStateMaxExpanded.Visibility = 'Collapsed'
             $gameModeBar.Visibility               = 'Collapsed'
-            $glowBorder.Background = [System.Windows.Media.ColorConverter]::ConvertFromString("#CC0D111A")
+            $glowBorder.Background = Get-Brush "#CC0D111A"
         }
         "Expanded" {
             $targetW = 520.0
@@ -2964,7 +2974,7 @@ function Set-IslandState ([string]$newState) {
             $containerStateExpanded.Visibility    = 'Visible'
             $containerStateMaxExpanded.Visibility = 'Collapsed'
             $gameModeBar.Visibility               = 'Collapsed'
-            $glowBorder.Background = [System.Windows.Media.ColorConverter]::ConvertFromString("#CC0D111A")
+            $glowBorder.Background = Get-Brush "#CC0D111A"
         }
         "MaxExpanded" {
             $targetW = 780.0
@@ -2978,7 +2988,7 @@ function Set-IslandState ([string]$newState) {
             $containerStateExpanded.Visibility    = 'Collapsed'
             $containerStateMaxExpanded.Visibility = 'Visible'
             $gameModeBar.Visibility               = 'Collapsed'
-            $glowBorder.Background = [System.Windows.Media.ColorConverter]::ConvertFromString("#EA0E0E13")
+            $glowBorder.Background = Get-Brush "#EA0E0E13"
         }
         "Game" {
             $targetW = 480.0
@@ -2992,14 +3002,14 @@ function Set-IslandState ([string]$newState) {
             $containerStateExpanded.Visibility    = 'Collapsed'
             $containerStateMaxExpanded.Visibility = 'Collapsed'
             $gameModeBar.Visibility               = 'Visible'
-            $glowBorder.Background = [System.Windows.Media.ColorConverter]::ConvertFromString("#000000")
+            $glowBorder.Background = Get-Brush "#000000"
         }
     }
 
     # Smooth animation
     Animate-Property $glowBorder ([System.Windows.Controls.Border]::WidthProperty) $targetW 0.25
     Animate-Property $glowBorder ([System.Windows.Controls.Border]::HeightProperty) $targetH 0.25
-    Animate-Property $glowBorder ([System.Windows.Controls.Border]::CornerRadiusProperty) $targetRadius 0.25
+    $glowBorder.CornerRadius = New-Object System.Windows.CornerRadius($targetRadius)
 
     $window.Width  = $targetW + 28
     $window.Height = $targetH + 28
@@ -3069,8 +3079,8 @@ function Populate-CircularLauncherGrid {
         $pill = New-Object System.Windows.Controls.Border
         $pill.Width = 48; $pill.Height = 48
         $pill.CornerRadius = New-Object System.Windows.CornerRadius(24)
-        $pill.Background = [System.Windows.Media.ColorConverter]::ConvertFromString("#16161D")
-        $pill.BorderBrush = [System.Windows.Media.ColorConverter]::ConvertFromString("#2AFFFFFF")
+        $pill.Background = Get-Brush "#16161D"
+        $pill.BorderBrush = Get-Brush "#2AFFFFFF"
         $pill.BorderThickness = New-Object System.Windows.Thickness(1)
         $pill.Cursor = [System.Windows.Input.Cursors]::Hand
         $pill.RenderTransformOrigin = New-Object System.Windows.Point(0.5, 0.5)
@@ -3081,7 +3091,7 @@ function Populate-CircularLauncherGrid {
         $ic = New-Object System.Windows.Controls.TextBlock
         $ic.Text = $app.Icon
         $ic.FontSize = 18
-        $ic.Foreground = [System.Windows.Media.ColorConverter]::ConvertFromString($app.Color)
+        $ic.Foreground = Get-Brush $app.Color
         $ic.HorizontalAlignment = 'Center'
         $ic.VerticalAlignment = 'Center'
         $pill.Child = $ic
@@ -3097,7 +3107,7 @@ function Populate-CircularLauncherGrid {
             $st = $this.RenderTransform
             Animate-Property $st ([System.Windows.Media.ScaleTransform]::ScaleXProperty) 1.0 0.15
             Animate-Property $st ([System.Windows.Media.ScaleTransform]::ScaleYProperty) 1.0 0.15
-            $this.BorderBrush = [System.Windows.Media.ColorConverter]::ConvertFromString("#2AFFFFFF")
+            $this.BorderBrush = Get-Brush "#2AFFFFFF"
         })
 
         # Monospaced Sublabel
@@ -3105,7 +3115,7 @@ function Populate-CircularLauncherGrid {
         $lbl.Text = $app.Name
         $lbl.FontSize = 9
         $lbl.FontFamily = New-Object System.Windows.Media.FontFamily("Consolas, Segoe UI")
-        $lbl.Foreground = [System.Windows.Media.ColorConverter]::ConvertFromString("#94A3B8")
+        $lbl.Foreground = Get-Brush "#94A3B8"
         $lbl.HorizontalAlignment = 'Center'
         $lbl.Margin = New-Object System.Windows.Thickness(0, 4, 0, 0)
 
@@ -3148,7 +3158,7 @@ function Update-SynchronizedLyrics {
         $lyricsLinesContainer.Children.Clear()
         $t = New-Object System.Windows.Controls.TextBlock
         $t.Text = "No lyrics available"
-        $t.FontSize = 11; $t.Foreground = [System.Windows.Media.ColorConverter]::ConvertFromString("#64748B")
+        $t.FontSize = 11; $t.Foreground = Get-Brush "#64748B"
         [void]$lyricsLinesContainer.Children.Add($t)
         return
     }
@@ -3161,7 +3171,7 @@ function Update-SynchronizedLyrics {
             $tb.Text = $lines[$i].Text
             $tb.FontSize = 11
             $tb.FontWeight = [System.Windows.FontWeights]::Normal
-            $tb.Foreground = [System.Windows.Media.ColorConverter]::ConvertFromString("#64748B")
+            $tb.Foreground = Get-Brush "#64748B"
             $tb.Margin = New-Object System.Windows.Thickness(0, 3, 0, 3)
             $tb.TextWrapping = [System.Windows.TextWrapping]::Wrap
             [void]$lyricsLinesContainer.Children.Add($tb)
@@ -3182,12 +3192,12 @@ function Update-SynchronizedLyrics {
     if ($activeIdx -ne $script:currentLyricIdx -and $activeIdx -lt $lyricsLinesContainer.Children.Count) {
         if ($script:currentLyricIdx -ge 0 -and $script:currentLyricIdx -lt $lyricsLinesContainer.Children.Count) {
             $oldTb = $lyricsLinesContainer.Children[$script:currentLyricIdx]
-            $oldTb.Foreground = [System.Windows.Media.ColorConverter]::ConvertFromString("#64748B")
+            $oldTb.Foreground = Get-Brush "#64748B"
             $oldTb.FontWeight = [System.Windows.FontWeights]::Normal
         }
 
         $newTb = $lyricsLinesContainer.Children[$activeIdx]
-        $newTb.Foreground = [System.Windows.Media.ColorConverter]::ConvertFromString("#22D3EE")
+        $newTb.Foreground = Get-Brush "#22D3EE"
         $newTb.FontWeight = [System.Windows.FontWeights]::Bold
 
         # Scroll into view
