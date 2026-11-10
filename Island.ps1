@@ -1578,6 +1578,52 @@ $xaml = [xml]@"
               </StackPanel>
             </Grid>
 
+              <!-- Action Required Notification Bar (Overlays Notch when agent needs action) -->
+              <Grid x:Name="AgentAlertBar" Height="38" Background="#1E1609" Margin="2,0" Visibility="Collapsed">
+                <Border BorderBrush="#F59E0B" BorderThickness="1" CornerRadius="19" Padding="10,0">
+                  <Grid>
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="Auto"/>
+                      <ColumnDefinition Width="*"/>
+                      <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Alert Icon & Agent -->
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                      <TextBlock Text="&#xE7BA;" FontFamily="Segoe MDL2 Assets" FontSize="13" Foreground="#F59E0B" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                      <TextBlock x:Name="AgentAlertName" Text="Antigravity" FontSize="11" FontWeight="Bold" Foreground="#F59E0B" VerticalAlignment="Center"/>
+                    </StackPanel>
+
+                    <!-- Alert Message -->
+                    <TextBlock x:Name="AgentAlertText" Grid.Column="1" Text="Permission required to run command" FontSize="10" Foreground="#FDE68A" Margin="8,0" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+
+                    <!-- Action Buttons -->
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                      <Button x:Name="BtnAlertApprove" Content="✓ Submit" Background="#059669" Foreground="#FFFFFF" BorderThickness="0"
+                              Padding="8,3" FontSize="10" FontWeight="Bold" Cursor="Hand" Focusable="False" Margin="0,0,6,0">
+                        <Button.Template>
+                          <ControlTemplate TargetType="Button">
+                            <Border Background="{TemplateBinding Background}" CornerRadius="10" Padding="{TemplateBinding Padding}">
+                              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                          </ControlTemplate>
+                        </Button.Template>
+                      </Button>
+                      <Button x:Name="BtnAlertReject" Content="✕ Reject" Background="#DC2626" Foreground="#FFFFFF" BorderThickness="0"
+                              Padding="8,3" FontSize="10" FontWeight="Bold" Cursor="Hand" Focusable="False">
+                        <Button.Template>
+                          <ControlTemplate TargetType="Button">
+                            <Border Background="{TemplateBinding Background}" CornerRadius="10" Padding="{TemplateBinding Padding}">
+                              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                          </ControlTemplate>
+                        </Button.Template>
+                      </Button>
+                    </StackPanel>
+                  </Grid>
+                </Border>
+              </Grid>
+
             <!-- Stealth Single-Accent Game Mode HUD Bar (46px High Glass Status Capsule) -->
             <Grid x:Name="GameModeBar" Height="46" Cursor="Hand" Background="Transparent" Margin="8,0" Visibility="Collapsed">
               <Grid.ColumnDefinitions>
@@ -2328,7 +2374,134 @@ $xaml = [xml]@"
                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
               </Grid>
 
-              <!-- 6. SETTINGS TAB -->
+              
+              <!-- 6. AI AGENTS TAB -->
+              <Grid x:Name="ViewAI" Margin="8,6" Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                  <RowDefinition Height="Auto"/>
+                  <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- Header with Test Alert Trigger -->
+                <Grid Grid.Row="0" Margin="4,0,4,8">
+                  <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <Ellipse Width="7" Height="7" Fill="#34D399" Margin="0,0,6,0"/>
+                    <TextBlock Text="AI AGENTS TELEMETRY" FontSize="11" FontWeight="Bold" Foreground="#FFFFFF"/>
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <Button x:Name="BtnSimulateAlert" Content="⚡ Test Alert" Background="#20F59E0B" Foreground="#F59E0B"
+                            BorderBrush="#40F59E0B" BorderThickness="1" Padding="8,2" FontSize="10" FontWeight="SemiBold"
+                            Cursor="Hand" Focusable="False" Margin="0,0,8,0">
+                      <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                          <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                          </Border>
+                        </ControlTemplate>
+                      </Button.Template>
+                    </Button>
+                    <TextBlock x:Name="AiTotalTokensText" Text="68.0M tokens · $45.29" FontSize="10" FontFamily="Consolas, Monospace" Foreground="#9B9BA7" VerticalAlignment="Center"/>
+                  </StackPanel>
+                </Grid>
+
+                <!-- 4 AI Agent Cards in a 2x2 Grid -->
+                <UniformGrid Grid.Row="1" Columns="2" Rows="2">
+                  <!-- Card 1: Google Antigravity -->
+                  <Border Background="#16161D" BorderBrush="#1AFFFFFF" BorderThickness="1" CornerRadius="10" Margin="4" Padding="10,8">
+                    <StackPanel>
+                      <Grid>
+                        <StackPanel Orientation="Horizontal">
+                          <Ellipse x:Name="StatusDotAntigravity" Width="6" Height="6" Fill="#34D399" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                          <TextBlock Text="Google Antigravity" FontSize="11" FontWeight="Bold" Foreground="#FFFFFF"/>
+                        </StackPanel>
+                        <TextBlock x:Name="StatusBadgeAntigravity" Text="Working" FontSize="9" FontWeight="SemiBold" Foreground="#34D399" HorizontalAlignment="Right"/>
+                      </Grid>
+                      <TextBlock Text="Gemini 2.5 Pro" FontSize="9" Foreground="#9B9BA7" Margin="12,1,0,4"/>
+                      <Grid Margin="0,2,0,2">
+                        <TextBlock Text="5h Quota" FontSize="9" Foreground="#64748B"/>
+                        <TextBlock x:Name="BarValAntigravity5h" Text="62%" FontSize="9" FontFamily="Consolas, Monospace" Foreground="#FFFFFF" HorizontalAlignment="Right"/>
+                      </Grid>
+                      <ProgressBar x:Name="BarAntigravity5h" Value="62" Maximum="100" Height="4" Background="#242434" Foreground="#34D399" BorderThickness="0"/>
+                      <Grid Margin="0,4,0,0">
+                        <TextBlock Text="19.1M tokens" FontSize="9" FontFamily="Consolas, Monospace" Foreground="#9B9BA7"/>
+                        <TextBlock Text="$12.60" FontSize="9" FontFamily="Consolas, Monospace" Foreground="#34D399" HorizontalAlignment="Right"/>
+                      </Grid>
+                    </StackPanel>
+                  </Border>
+
+                  <!-- Card 2: Cursor AI -->
+                  <Border Background="#16161D" BorderBrush="#1AFFFFFF" BorderThickness="1" CornerRadius="10" Margin="4" Padding="10,8">
+                    <StackPanel>
+                      <Grid>
+                        <StackPanel Orientation="Horizontal">
+                          <Ellipse x:Name="StatusDotCursor" Width="6" Height="6" Fill="#34D399" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                          <TextBlock Text="Cursor AI" FontSize="11" FontWeight="Bold" Foreground="#FFFFFF"/>
+                        </StackPanel>
+                        <TextBlock x:Name="StatusBadgeCursor" Text="Working" FontSize="9" FontWeight="SemiBold" Foreground="#34D399" HorizontalAlignment="Right"/>
+                      </Grid>
+                      <TextBlock Text="Claude 3.7 Pro" FontSize="9" Foreground="#9B9BA7" Margin="12,1,0,4"/>
+                      <Grid Margin="0,2,0,2">
+                        <TextBlock Text="5h Quota" FontSize="9" Foreground="#64748B"/>
+                        <TextBlock x:Name="BarValCursor5h" Text="72%" FontSize="9" FontFamily="Consolas, Monospace" Foreground="#FFFFFF" HorizontalAlignment="Right"/>
+                      </Grid>
+                      <ProgressBar x:Name="BarCursor5h" Value="72" Maximum="100" Height="4" Background="#242434" Foreground="#A78BFA" BorderThickness="0"/>
+                      <Grid Margin="0,4,0,0">
+                        <TextBlock Text="26.4M tokens" FontSize="9" FontFamily="Consolas, Monospace" Foreground="#9B9BA7"/>
+                        <TextBlock Text="$17.84" FontSize="9" FontFamily="Consolas, Monospace" Foreground="#34D399" HorizontalAlignment="Right"/>
+                      </Grid>
+                    </StackPanel>
+                  </Border>
+
+                  <!-- Card 3: VS Code Copilot -->
+                  <Border Background="#16161D" BorderBrush="#1AFFFFFF" BorderThickness="1" CornerRadius="10" Margin="4" Padding="10,8">
+                    <StackPanel>
+                      <Grid>
+                        <StackPanel Orientation="Horizontal">
+                          <Ellipse x:Name="StatusDotVSCode" Width="6" Height="6" Fill="#22D3EE" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                          <TextBlock Text="VS Code Copilot" FontSize="11" FontWeight="Bold" Foreground="#FFFFFF"/>
+                        </StackPanel>
+                        <TextBlock x:Name="StatusBadgeVSCode" Text="Idle" FontSize="9" FontWeight="SemiBold" Foreground="#22D3EE" HorizontalAlignment="Right"/>
+                      </Grid>
+                      <TextBlock Text="GPT-4.5 Codex" FontSize="9" Foreground="#9B9BA7" Margin="12,1,0,4"/>
+                      <Grid Margin="0,2,0,2">
+                        <TextBlock Text="5h Quota" FontSize="9" Foreground="#64748B"/>
+                        <TextBlock x:Name="BarValVSCode5h" Text="45%" FontSize="9" FontFamily="Consolas, Monospace" Foreground="#FFFFFF" HorizontalAlignment="Right"/>
+                      </Grid>
+                      <ProgressBar x:Name="BarVSCode5h" Value="45" Maximum="100" Height="4" Background="#242434" Foreground="#22D3EE" BorderThickness="0"/>
+                      <Grid Margin="0,4,0,0">
+                        <TextBlock Text="8.3M tokens" FontSize="9" FontFamily="Consolas, Monospace" Foreground="#9B9BA7"/>
+                        <TextBlock Text="$5.40" FontSize="9" FontFamily="Consolas, Monospace" Foreground="#34D399" HorizontalAlignment="Right"/>
+                      </Grid>
+                    </StackPanel>
+                  </Border>
+
+                  <!-- Card 4: Claude Code -->
+                  <Border Background="#16161D" BorderBrush="#1AFFFFFF" BorderThickness="1" CornerRadius="10" Margin="4" Padding="10,8">
+                    <StackPanel>
+                      <Grid>
+                        <StackPanel Orientation="Horizontal">
+                          <Ellipse x:Name="StatusDotClaude" Width="6" Height="6" Fill="#34D399" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                          <TextBlock Text="Claude Code" FontSize="11" FontWeight="Bold" Foreground="#FFFFFF"/>
+                        </StackPanel>
+                        <TextBlock x:Name="StatusBadgeClaude" Text="Working" FontSize="9" FontWeight="SemiBold" Foreground="#34D399" HorizontalAlignment="Right"/>
+                      </Grid>
+                      <TextBlock Text="Claude 3.7 Sonnet" FontSize="9" Foreground="#9B9BA7" Margin="12,1,0,4"/>
+                      <Grid Margin="0,2,0,2">
+                        <TextBlock Text="5h Quota" FontSize="9" Foreground="#64748B"/>
+                        <TextBlock x:Name="BarValClaude5h" Text="58%" FontSize="9" FontFamily="Consolas, Monospace" Foreground="#FFFFFF" HorizontalAlignment="Right"/>
+                      </Grid>
+                      <ProgressBar x:Name="BarClaude5h" Value="58" Maximum="100" Height="4" Background="#242434" Foreground="#F472B6" BorderThickness="0"/>
+                      <Grid Margin="0,4,0,0">
+                        <TextBlock Text="14.2M tokens" FontSize="9" FontFamily="Consolas, Monospace" Foreground="#9B9BA7"/>
+                        <TextBlock Text="$9.45" FontSize="9" FontFamily="Consolas, Monospace" Foreground="#34D399" HorizontalAlignment="Right"/>
+                      </Grid>
+                    </StackPanel>
+                  </Border>
+                </UniformGrid>
+              </Grid>
+
+              <!-- 7. SETTINGS TAB -->
+
               <Grid x:Name="ViewSettings" Margin="4,2" Visibility="Collapsed">
                 <StackPanel>
                   <!-- Settings Header with Back Button -->
@@ -2510,6 +2683,16 @@ $tabBtnControls      = $window.FindName('TabBtnControls')
 $tabBtnPower         = $window.FindName('TabBtnPower')
 
 $tabBtnAI              = $window.FindName('TabBtnAI')
+
+$agentAlertBar         = $window.FindName('AgentAlertBar')
+$agentAlertName        = $window.FindName('AgentAlertName')
+$agentAlertText        = $window.FindName('AgentAlertText')
+$btnAlertApprove       = $window.FindName('BtnAlertApprove')
+$btnAlertReject        = $window.FindName('BtnAlertReject')
+$btnSimulateAlert      = $window.FindName('BtnSimulateAlert')
+$statusBadgeAntigravity = $window.FindName('StatusBadgeAntigravity')
+$statusDotAntigravity  = $window.FindName('StatusDotAntigravity')
+
 $viewAI                = $window.FindName('ViewAI')
 $btnOpenCalendarWindow = $window.FindName('BtnOpenCalendarWindow')
 $todayAgendaList       = $window.FindName('TodayAgendaList')
@@ -2890,7 +3073,7 @@ function Slide-UpIsland {
         }
         Default { # "Top"
             # Leaves slim 6px trigger strip along the top monitor edge
-            Animate-DockTop -44.0
+            Animate-DockTop $Config.ScreenTopMargin
         }
     }
 }
@@ -3128,7 +3311,7 @@ function Show-UrlFavoritesWindow {
         $headGrid = New-Object System.Windows.Controls.Grid
         $headGrid.Margin = New-Object System.Windows.Thickness(0, 0, 0, 12)
         $ht = New-Object System.Windows.Controls.TextBlock; $ht.Text = "★ URL Favorites"; $ht.FontSize = 14; $ht.FontWeight = 'Bold'; $ht.Foreground = Get-Brush "#FFFFFF"
-        $btnX = New-Object System.Windows.Controls.Button; $btnX.Content = "✕"; $btnX.HorizontalAlignment = 'Right'; $btnX.Background = [System.Windows.Media.Brushes]::Transparent; $btnX.Foreground = Get-Brush "#9B9BA7"; $btnX.BorderThickness = New-Object System.Windows.Thickness(0); $btnX.Cursor = [System.Windows.Input.Cursors]::Hand; $btnX.Add_Click({ $favWin.Close() })
+        $btnX = New-Object System.Windows.Controls.Button; $btnX.Content = "✕"; $btnX.HorizontalAlignment = 'Right'; $btnX.Background = [System.Windows.Media.Brushes]::Transparent; $btnX.Foreground = Get-Brush "#9B9BA7"; $btnX.BorderThickness = New-Object System.Windows.Thickness(0); $btnX.Cursor = [System.Windows.Input.Cursors]::Hand; $btnX.Add_PreviewMouseLeftButtonUp({ param($s, $e) $favWin.Close() })
         [void]$headGrid.Children.Add($ht); [void]$headGrid.Children.Add($btnX)
         [System.Windows.Controls.Grid]::SetRow($headGrid, 0); [void]$grid.Children.Add($headGrid)
 
@@ -3175,10 +3358,9 @@ function Show-UrlFavoritesWindow {
 
 function Show-CalendarWindow {
     try {
-        $data = Get-IslandData
         $calWin = New-Object System.Windows.Window
         $calWin.Title = "Calendar & Agenda"
-        $calWin.Width = 460; $calWin.Height = 480
+        $calWin.Width = 480; $calWin.Height = 520
         $calWin.WindowStyle = [System.Windows.WindowStyle]::None
         $calWin.AllowsTransparency = $true
         $calWin.Background = [System.Windows.Media.Brushes]::Transparent
@@ -3200,48 +3382,134 @@ function Show-CalendarWindow {
 
         $grid = New-Object System.Windows.Controls.Grid
         $r1 = New-Object System.Windows.Controls.RowDefinition; $r1.Height = [System.Windows.GridLength]::Auto
-        $r2 = New-Object System.Windows.Controls.RowDefinition; $r2.Height = New-Object System.Windows.GridLength(1, [System.Windows.GridUnitType]::Star)
-        [void]$grid.RowDefinitions.Add($r1); [void]$grid.RowDefinitions.Add($r2)
+        $r2 = New-Object System.Windows.Controls.RowDefinition; $r2.Height = [System.Windows.GridLength]::Auto
+        $r3 = New-Object System.Windows.Controls.RowDefinition; $r3.Height = New-Object System.Windows.GridLength(1, [System.Windows.GridUnitType]::Star)
+        [void]$grid.RowDefinitions.Add($r1); [void]$grid.RowDefinitions.Add($r2); [void]$grid.RowDefinitions.Add($r3)
 
-        # Header
+        # Row 0: Header with Fixed Close Button
         $headGrid = New-Object System.Windows.Controls.Grid
-        $headGrid.Margin = New-Object System.Windows.Thickness(0, 0, 0, 12)
+        $headGrid.Margin = New-Object System.Windows.Thickness(0, 0, 0, 10)
         $ht = New-Object System.Windows.Controls.TextBlock; $ht.Text = "📅 Calendar & Agenda"; $ht.FontSize = 14; $ht.FontWeight = 'Bold'; $ht.Foreground = Get-Brush "#FFFFFF"
-        $btnX = New-Object System.Windows.Controls.Button; $btnX.Content = "✕"; $btnX.HorizontalAlignment = 'Right'; $btnX.Background = [System.Windows.Media.Brushes]::Transparent; $btnX.Foreground = Get-Brush "#9B9BA7"; $btnX.BorderThickness = New-Object System.Windows.Thickness(0); $btnX.Cursor = [System.Windows.Input.Cursors]::Hand; $btnX.Add_Click({ $calWin.Close() })
+        $btnX = New-Object System.Windows.Controls.Button; $btnX.Content = "✕"; $btnX.HorizontalAlignment = 'Right'; $btnX.Background = [System.Windows.Media.Brushes]::Transparent; $btnX.Foreground = Get-Brush "#9B9BA7"; $btnX.BorderThickness = New-Object System.Windows.Thickness(0); $btnX.Cursor = [System.Windows.Input.Cursors]::Hand; $btnX.FontSize = 14
+        $btnX.Add_PreviewMouseLeftButtonUp({ param($s, $e) $calWin.Close() })
         [void]$headGrid.Children.Add($ht); [void]$headGrid.Children.Add($btnX)
         [System.Windows.Controls.Grid]::SetRow($headGrid, 0); [void]$grid.Children.Add($headGrid)
 
-        # Agenda Events
+        # Row 1: Add Reminder Bar
+        $addBar = New-Object System.Windows.Controls.Border
+        $addBar.Background = Get-Brush "#16161D"
+        $addBar.BorderBrush = Get-Brush "#2AFFFFFF"
+        $addBar.BorderThickness = New-Object System.Windows.Thickness(1)
+        $addBar.CornerRadius = New-Object System.Windows.CornerRadius(10)
+        $addBar.Padding = New-Object System.Windows.Thickness(8, 6, 8, 6)
+        $addBar.Margin = New-Object System.Windows.Thickness(0, 0, 0, 12)
+
+        $abGrid = New-Object System.Windows.Controls.Grid
+        $ac1 = New-Object System.Windows.Controls.ColumnDefinition; $ac1.Width = New-Object System.Windows.GridLength(80)
+        $ac2 = New-Object System.Windows.Controls.ColumnDefinition; $ac2.Width = New-Object System.Windows.GridLength(1, [System.Windows.GridUnitType]::Star)
+        $ac3 = New-Object System.Windows.Controls.ColumnDefinition; $ac3.Width = New-Object System.Windows.GridLength(65)
+        [void]$abGrid.ColumnDefinitions.Add($ac1); [void]$abGrid.ColumnDefinitions.Add($ac2); [void]$abGrid.ColumnDefinitions.Add($ac3)
+
+        $tbTime = New-Object System.Windows.Controls.TextBox
+        $tbTime.Text = (Get-Date).ToString("hh:mm tt")
+        $tbTime.Background = Get-Brush "#242434"; $tbTime.Foreground = Get-Brush "#FFFFFF"; $tbTime.BorderThickness = New-Object System.Windows.Thickness(0)
+        $tbTime.Padding = New-Object System.Windows.Thickness(6, 4, 6, 4); $tbTime.Margin = New-Object System.Windows.Thickness(0, 0, 6, 0); $tbTime.FontSize = 11
+        [System.Windows.Controls.Grid]::SetColumn($tbTime, 0); [void]$abGrid.Children.Add($tbTime)
+
+        $tbTitle = New-Object System.Windows.Controls.TextBox
+        $tbTitle.Text = "New Reminder"
+        $tbTitle.Background = Get-Brush "#242434"; $tbTitle.Foreground = Get-Brush "#FFFFFF"; $tbTitle.BorderThickness = New-Object System.Windows.Thickness(0)
+        $tbTitle.Padding = New-Object System.Windows.Thickness(8, 4, 8, 4); $tbTitle.Margin = New-Object System.Windows.Thickness(0, 0, 6, 0); $tbTitle.FontSize = 11
+        [System.Windows.Controls.Grid]::SetColumn($tbTitle, 1); [void]$abGrid.Children.Add($tbTitle)
+
+        $btnAdd = New-Object System.Windows.Controls.Button
+        $btnAdd.Content = "+ Add"; $btnAdd.Background = Get-Brush "#A78BFA"; $btnAdd.Foreground = Get-Brush "#000000"; $btnAdd.FontWeight = 'Bold'; $btnAdd.FontSize = 11; $btnAdd.BorderThickness = New-Object System.Windows.Thickness(0); $btnAdd.Cursor = [System.Windows.Input.Cursors]::Hand
+        [System.Windows.Controls.Grid]::SetColumn($btnAdd, 2); [void]$abGrid.Children.Add($btnAdd)
+        $addBar.Child = $abGrid
+        [System.Windows.Controls.Grid]::SetRow($addBar, 1); [void]$grid.Children.Add($addBar)
+
+        # Row 2: Agenda Events List
         $sv = New-Object System.Windows.Controls.ScrollViewer; $sv.VerticalScrollBarVisibility = 'Auto'
-        $list = New-Object System.Windows.Controls.StackPanel
-        foreach ($ev in $data.CalendarEvents) {
-            $card = New-Object System.Windows.Controls.Border
-            $card.Background = Get-Brush "#16161D"
-            $card.BorderBrush = Get-Brush "#1AFFFFFF"
-            $card.BorderThickness = New-Object System.Windows.Thickness(1)
-            $card.CornerRadius = New-Object System.Windows.CornerRadius(8)
-            $card.Margin = New-Object System.Windows.Thickness(0, 0, 0, 6)
-            $card.Padding = New-Object System.Windows.Thickness(12, 10, 12, 10)
+        $listPanel = New-Object System.Windows.Controls.StackPanel
+        $sv.Content = $listPanel
+        [System.Windows.Controls.Grid]::SetRow($sv, 2); [void]$grid.Children.Add($sv)
 
-            $cGrid = New-Object System.Windows.Controls.Grid
-            $c1 = New-Object System.Windows.Controls.ColumnDefinition; $c1.Width = New-Object System.Windows.GridLength(80)
-            $c2 = New-Object System.Windows.Controls.ColumnDefinition; $c2.Width = New-Object System.Windows.GridLength(1, [System.Windows.GridUnitType]::Star)
-            [void]$cGrid.ColumnDefinitions.Add($c1); [void]$cGrid.ColumnDefinitions.Add($c2)
+        $renderEvents = {
+            $listPanel.Children.Clear()
+            $curData = Get-IslandData
+            if ($curData.CalendarEvents) {
+                foreach ($ev in $curData.CalendarEvents) {
+                    $card = New-Object System.Windows.Controls.Border
+                    $card.Background = Get-Brush "#16161D"
+                    $card.BorderBrush = Get-Brush "#1AFFFFFF"
+                    $card.BorderThickness = New-Object System.Windows.Thickness(1)
+                    $card.CornerRadius = New-Object System.Windows.CornerRadius(8)
+                    $card.Margin = New-Object System.Windows.Thickness(0, 0, 0, 6)
+                    $card.Padding = New-Object System.Windows.Thickness(12, 8, 10, 8)
 
-            $tTime = New-Object System.Windows.Controls.TextBlock; $tTime.Text = $ev.Time; $tTime.FontSize = 11; $tTime.Foreground = Get-Brush "#A78BFA"; $tTime.FontWeight = 'SemiBold'; [System.Windows.Controls.Grid]::SetColumn($tTime, 0); [void]$cGrid.Children.Add($tTime)
-            $tTit = New-Object System.Windows.Controls.TextBlock; $tTit.Text = $ev.Title; $tTit.FontSize = 11; $tTit.Foreground = Get-Brush "#FFFFFF"; $tTit.FontWeight = 'Bold'; [System.Windows.Controls.Grid]::SetColumn($tTit, 1); [void]$cGrid.Children.Add($tTit)
+                    $cGrid = New-Object System.Windows.Controls.Grid
+                    $c1 = New-Object System.Windows.Controls.ColumnDefinition; $c1.Width = New-Object System.Windows.GridLength(80)
+                    $c2 = New-Object System.Windows.Controls.ColumnDefinition; $c2.Width = New-Object System.Windows.GridLength(1, [System.Windows.GridUnitType]::Star)
+                    $c3 = New-Object System.Windows.Controls.ColumnDefinition; $c3.Width = New-Object System.Windows.GridLength(30)
+                    [void]$cGrid.ColumnDefinitions.Add($c1); [void]$cGrid.ColumnDefinitions.Add($c2); [void]$cGrid.ColumnDefinitions.Add($c3)
 
-            $card.Child = $cGrid
-            [void]$list.Children.Add($card)
+                    $tTime = New-Object System.Windows.Controls.TextBlock; $tTime.Text = $ev.Time; $tTime.FontSize = 11; $tTime.Foreground = Get-Brush "#A78BFA"; $tTime.FontWeight = 'SemiBold'; $tTime.VerticalAlignment = 'Center'; [System.Windows.Controls.Grid]::SetColumn($tTime, 0); [void]$cGrid.Children.Add($tTime)
+                    $tTit = New-Object System.Windows.Controls.TextBlock; $tTit.Text = $ev.Title; $tTit.FontSize = 11; $tTit.Foreground = Get-Brush "#FFFFFF"; $tTit.FontWeight = 'SemiBold'; $tTit.VerticalAlignment = 'Center'; [System.Windows.Controls.Grid]::SetColumn($tTit, 1); [void]$cGrid.Children.Add($tTit)
+
+                    # Delete Button
+                    $btnDel = New-Object System.Windows.Controls.Button; $btnDel.Content = "🗑"; $btnDel.FontSize = 11; $btnDel.Foreground = Get-Brush "#F87171"; $btnDel.Background = [System.Windows.Media.Brushes]::Transparent; $btnDel.BorderThickness = New-Object System.Windows.Thickness(0); $btnDel.Cursor = [System.Windows.Input.Cursors]::Hand; [System.Windows.Controls.Grid]::SetColumn($btnDel, 2); [void]$cGrid.Children.Add($btnDel)
+
+                    $targetId = $ev.Id
+                    $targetTitle = $ev.Title
+                    $btnDel.Add_PreviewMouseLeftButtonUp({
+                        param($s, $e)
+                        $d = Get-IslandData
+                        $newList = @()
+                        foreach ($x in $d.CalendarEvents) {
+                            if ($targetId -and $x.Id -eq $targetId) { continue }
+                            if (-not $targetId -and $x.Title -eq $targetTitle) { continue }
+                            $newList += $x
+                        }
+                        $d.CalendarEvents = $newList
+                        Save-IslandData $d
+                        & $renderEvents
+                        Update-TodayAgenda
+                    })
+
+                    $card.Child = $cGrid
+                    [void]$listPanel.Children.Add($card)
+                }
+            }
         }
-        $sv.Content = $list
-        [System.Windows.Controls.Grid]::SetRow($sv, 1); [void]$grid.Children.Add($sv)
+        & $renderEvents
+
+        # Add Button Handler
+        $btnAdd.Add_PreviewMouseLeftButtonUp({
+            param($s, $e)
+            if ($tbTitle.Text -and $tbTitle.Text.Trim() -ne "") {
+                $d = Get-IslandData
+                $newEvent = [pscustomobject]@{
+                    Id = [int](Get-Date -UFormat %s)
+                    Date = (Get-Date).ToString("yyyy-MM-dd")
+                    Time = $tbTime.Text.Trim()
+                    Title = $tbTitle.Text.Trim()
+                    Category = "General"
+                }
+                $list = @($d.CalendarEvents) + @($newEvent)
+                $d.CalendarEvents = $list
+                Save-IslandData $d
+                $tbTitle.Text = ""
+                & $renderEvents
+                Update-TodayAgenda
+            }
+        })
 
         $bdr.Child = $grid
         $calWin.Content = $bdr
         $calWin.Show()
     } catch { }
 }
+
 
 function Show-ClipboardWindow {
     try {
@@ -3277,7 +3545,7 @@ function Show-ClipboardWindow {
         $headGrid = New-Object System.Windows.Controls.Grid
         $headGrid.Margin = New-Object System.Windows.Thickness(0, 0, 0, 12)
         $ht = New-Object System.Windows.Controls.TextBlock; $ht.Text = "📋 Clipboard History"; $ht.FontSize = 14; $ht.FontWeight = 'Bold'; $ht.Foreground = Get-Brush "#FFFFFF"
-        $btnX = New-Object System.Windows.Controls.Button; $btnX.Content = "✕"; $btnX.HorizontalAlignment = 'Right'; $btnX.Background = [System.Windows.Media.Brushes]::Transparent; $btnX.Foreground = Get-Brush "#9B9BA7"; $btnX.BorderThickness = New-Object System.Windows.Thickness(0); $btnX.Cursor = [System.Windows.Input.Cursors]::Hand; $btnX.Add_Click({ $clipWin.Close() })
+        $btnX = New-Object System.Windows.Controls.Button; $btnX.Content = "✕"; $btnX.HorizontalAlignment = 'Right'; $btnX.Background = [System.Windows.Media.Brushes]::Transparent; $btnX.Foreground = Get-Brush "#9B9BA7"; $btnX.BorderThickness = New-Object System.Windows.Thickness(0); $btnX.Cursor = [System.Windows.Input.Cursors]::Hand; $btnX.Add_PreviewMouseLeftButtonUp({ param($s, $e) $clipWin.Close() })
         [void]$headGrid.Children.Add($ht); [void]$headGrid.Children.Add($btnX)
         [System.Windows.Controls.Grid]::SetRow($headGrid, 0); [void]$grid.Children.Add($headGrid)
 
@@ -3944,6 +4212,67 @@ function Update-TodayAgenda {
             [void]$todayAgendaList.Children.Add($row)
         }
     }
+}
+
+
+# ------------------------------------------------------------------------------
+#  Island Alert Notification System (Notch Overlay & One-Click Dismissal)
+# ------------------------------------------------------------------------------
+function Show-AgentAlert ([string]$agentName, [string]$actionPrompt) {
+    if ($agentAlertBar) {
+        if ($agentAlertName) { $agentAlertName.Text = $agentName }
+        if ($agentAlertText) { $agentAlertText.Text = $actionPrompt }
+        $compactBar.Visibility = 'Collapsed'
+        $agentAlertBar.Visibility = 'Visible'
+        
+        # If collapsed, expand slightly to ensure full message visibility
+        if (-not $script:isExpanded) {
+            $animW = New-Object System.Windows.Media.Animation.DoubleAnimation
+            $animW.To = 440.0
+            $animW.Duration = [TimeSpan]::FromMilliseconds(200)
+            $glowBorder.BeginAnimation([System.Windows.Controls.Border]::WidthProperty, $animW)
+        }
+    }
+}
+
+function Dismiss-AgentAlert {
+    if ($agentAlertBar) {
+        $agentAlertBar.Visibility = 'Collapsed'
+        $compactBar.Visibility = 'Visible'
+        if (-not $script:isExpanded) {
+            $animW = New-Object System.Windows.Media.Animation.DoubleAnimation
+            $animW.To = $Config.IslandWidth
+            $animW.Duration = [TimeSpan]::FromMilliseconds(200)
+            $glowBorder.BeginAnimation([System.Windows.Controls.Border]::WidthProperty, $animW)
+        }
+    }
+}
+
+if ($btnAlertApprove) {
+    $btnAlertApprove.Add_PreviewMouseLeftButtonUp({
+        param($s, $e)
+        Dismiss-AgentAlert
+        if ($statusBadgeAntigravity) { $statusBadgeAntigravity.Text = "Working"; $statusBadgeAntigravity.Foreground = $script:brushGreen }
+        if ($statusDotAntigravity) { $statusDotAntigravity.Fill = $script:brushGreen }
+    })
+}
+
+if ($btnAlertReject) {
+    $btnAlertReject.Add_PreviewMouseLeftButtonUp({
+        param($s, $e)
+        Dismiss-AgentAlert
+        if ($statusBadgeAntigravity) { $statusBadgeAntigravity.Text = "Idle"; $statusBadgeAntigravity.Foreground = $script:brushInactiveFg }
+        if ($statusDotAntigravity) { $statusDotAntigravity.Fill = $script:brushInactiveFg }
+    })
+}
+
+if ($btnSimulateAlert) {
+    $btnSimulateAlert.Add_PreviewMouseLeftButtonUp({
+        param($s, $e)
+        if ($statusBadgeAntigravity) { $statusBadgeAntigravity.Text = "Action Required"; $statusBadgeAntigravity.Foreground = $script:brushAmber }
+        if ($statusDotAntigravity) { $statusDotAntigravity.Fill = $script:brushAmber }
+        Show-AgentAlert "Google Antigravity" "Approval required: Execute project build?"
+    })
 }
 
 function Render-AppsList {

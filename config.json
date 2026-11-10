@@ -1,11 +1,11 @@
 ﻿{
-    "IslandWidth":  330,
+    "IslandWidth":  360,
     "IslandHeight":  38,
     "ExpandedWidth":  520,
     "WindowWidth":  560,
     "WindowHeight":  360,
-    "ScreenTopMargin":  26,
-    "CornerRadius":  24,
+    "ScreenTopMargin":  15,
+    "CornerRadius":  19,
     "Surface":  "#CC0D111A",
     "CardColor":  "#16161D",
     "InnerTileColor":  "#1A1A24",
@@ -31,11 +31,11 @@
                  "Controls":  true,
                  "Power":  true
              },
-    "X":  823,
-    "Y":  159,
+    "X":  567,
+    "Y":  46,
     "MediaPopupMs":  4000,
     "GlassMode":  true,
-    "DockEdge":  "Top",
+    "DockEdge":  "Custom",
     "MaxExpandedHeight":  560,
     "Apps":  [
                  {
