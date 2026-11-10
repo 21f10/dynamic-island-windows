@@ -3384,20 +3384,113 @@ function Show-UrlFavoritesWindow {
     } catch { }
 }
 
+# ------------------------------------------------------------------------------
+#  Calendar & Agenda Window (Script-Scoped, Full Keyboard Focus & Interaction)
+# ------------------------------------------------------------------------------
+$script:calWin = $null
+$script:calTbTime = $null
+$script:calTbTitle = $null
+$script:calListPanel = $null
+
+function Add-CalendarReminder {
+    if ($script:calTbTitle -and $script:calTbTitle.Text.Trim() -ne "") {
+        $d = Get-IslandData
+        $newTime = if ($script:calTbTime -and $script:calTbTime.Text.Trim() -ne "") { $script:calTbTime.Text.Trim() } else { (Get-Date).ToString("hh:mm tt") }
+        $newTitle = $script:calTbTitle.Text.Trim()
+        $newEvent = [pscustomobject]@{
+            Id = [int](Get-Date -UFormat %s)
+            Date = (Get-Date).ToString("yyyy-MM-dd")
+            Time = $newTime
+            Title = $newTitle
+            Category = "General"
+        }
+        $d.CalendarEvents = @($d.CalendarEvents) + @($newEvent)
+        Save-IslandData $d
+        $script:calTbTitle.Text = ""
+        Refresh-CalendarList
+        Update-TodayAgenda
+    }
+}
+
+function Remove-CalendarReminder ($targetId, $targetTitle) {
+    $d = Get-IslandData
+    $newList = @()
+    foreach ($x in $d.CalendarEvents) {
+        if ($targetId -and $x.Id -eq $targetId) { continue }
+        if (-not $targetId -and $x.Title -eq $targetTitle) { continue }
+        $newList += $x
+    }
+    $d.CalendarEvents = $newList
+    Save-IslandData $d
+    Refresh-CalendarList
+    Update-TodayAgenda
+}
+
+function Refresh-CalendarList {
+    if (-not $script:calListPanel) { return }
+    $script:calListPanel.Children.Clear()
+    $curData = Get-IslandData
+    if ($curData.CalendarEvents) {
+        foreach ($ev in $curData.CalendarEvents) {
+            $card = New-Object System.Windows.Controls.Border
+            $card.Background = Get-Brush "#16161D"
+            $card.BorderBrush = Get-Brush "#1AFFFFFF"
+            $card.BorderThickness = New-Object System.Windows.Thickness(1)
+            $card.CornerRadius = New-Object System.Windows.CornerRadius(8)
+            $card.Margin = New-Object System.Windows.Thickness(0, 0, 0, 6)
+            $card.Padding = New-Object System.Windows.Thickness(12, 8, 10, 8)
+
+            $cGrid = New-Object System.Windows.Controls.Grid
+            $c1 = New-Object System.Windows.Controls.ColumnDefinition; $c1.Width = New-Object System.Windows.GridLength(85)
+            $c2 = New-Object System.Windows.Controls.ColumnDefinition; $c2.Width = New-Object System.Windows.GridLength(1, [System.Windows.GridUnitType]::Star)
+            $c3 = New-Object System.Windows.Controls.ColumnDefinition; $c3.Width = New-Object System.Windows.GridLength(32)
+            [void]$cGrid.ColumnDefinitions.Add($c1); [void]$cGrid.ColumnDefinitions.Add($c2); [void]$cGrid.ColumnDefinitions.Add($c3)
+
+            $tTime = New-Object System.Windows.Controls.TextBlock; $tTime.Text = $ev.Time; $tTime.FontSize = 11; $tTime.Foreground = Get-Brush "#A78BFA"; $tTime.FontWeight = 'SemiBold'; $tTime.VerticalAlignment = 'Center'; [System.Windows.Controls.Grid]::SetColumn($tTime, 0); [void]$cGrid.Children.Add($tTime)
+            $tTit = New-Object System.Windows.Controls.TextBlock; $tTit.Text = $ev.Title; $tTit.FontSize = 11; $tTit.Foreground = Get-Brush "#FFFFFF"; $tTit.FontWeight = 'SemiBold'; $tTit.VerticalAlignment = 'Center'; [System.Windows.Controls.Grid]::SetColumn($tTit, 1); [void]$cGrid.Children.Add($tTit)
+
+            # Custom Border Delete Button (PreviewMouseLeftButtonDown for 100% reliable clicks)
+            $btnDel = New-Object System.Windows.Controls.Border
+            $btnDel.Width = 26; $btnDel.Height = 26
+            $btnDel.CornerRadius = New-Object System.Windows.CornerRadius(13)
+            $btnDel.Background = Get-Brush "#20F87171"
+            $btnDel.Cursor = [System.Windows.Input.Cursors]::Hand
+            $delIco = New-Object System.Windows.Controls.TextBlock; $delIco.Text = "🗑"; $delIco.FontSize = 11; $delIco.Foreground = Get-Brush "#F87171"; $delIco.HorizontalAlignment = 'Center'; $delIco.VerticalAlignment = 'Center'
+            $btnDel.Child = $delIco
+            [System.Windows.Controls.Grid]::SetColumn($btnDel, 2)
+            [void]$cGrid.Children.Add($btnDel)
+
+            $targetId = $ev.Id
+            $targetTitle = $ev.Title
+            $btnDel.Add_PreviewMouseLeftButtonDown({
+                Remove-CalendarReminder $targetId $targetTitle
+            })
+
+            $card.Child = $cGrid
+            [void]$script:calListPanel.Children.Add($card)
+        }
+    }
+}
+
 function Show-CalendarWindow {
     try {
-        $calWin = New-Object System.Windows.Window
-        $calWin.Title = "Calendar & Agenda"
-        $calWin.Width = 480; $calWin.Height = 520
-        $calWin.WindowStyle = [System.Windows.WindowStyle]::None
-        $calWin.AllowsTransparency = $true
-        $calWin.Background = [System.Windows.Media.Brushes]::Transparent
-        $calWin.Topmost = $true
-        $calWin.WindowStartupLocation = [System.Windows.WindowStartupLocation]::CenterScreen
+        if ($script:calWin -and $script:calWin.IsVisible) {
+            $script:calWin.Activate()
+            return
+        }
 
-        # NOTE: Do NOT use ApplyNoActivate here so TextBoxes can receive keyboard focus and user can type!
-        $calWin.Add_SourceInitialized({
-            $hwnd = (New-Object System.Windows.Interop.WindowInteropHelper($calWin)).Handle
+        $script:calWin = New-Object System.Windows.Window
+        $script:calWin.Title = "Calendar & Agenda"
+        $script:calWin.Width = 480; $script:calWin.Height = 520
+        $script:calWin.WindowStyle = [System.Windows.WindowStyle]::None
+        $script:calWin.AllowsTransparency = $true
+        $script:calWin.Background = [System.Windows.Media.Brushes]::Transparent
+        $script:calWin.Topmost = $true
+        $script:calWin.WindowStartupLocation = [System.Windows.WindowStartupLocation]::CenterScreen
+
+        # Enable Acrylic Blur without WS_EX_NOACTIVATE so TextBoxes receive full keyboard focus
+        $script:calWin.Add_SourceInitialized({
+            $hwnd = (New-Object System.Windows.Interop.WindowInteropHelper($script:calWin)).Handle
             [IslandNative]::EnableAcrylic($hwnd, 0xDD101016)
         })
 
@@ -3414,14 +3507,31 @@ function Show-CalendarWindow {
         $r3 = New-Object System.Windows.Controls.RowDefinition; $r3.Height = New-Object System.Windows.GridLength(1, [System.Windows.GridUnitType]::Star)
         [void]$grid.RowDefinitions.Add($r1); [void]$grid.RowDefinitions.Add($r2); [void]$grid.RowDefinitions.Add($r3)
 
-        # Row 0: Header with Fixed Close Button
+        # Row 0: Header with Draggable Title & Custom Close Button (✕)
         $headGrid = New-Object System.Windows.Controls.Grid
         $headGrid.Margin = New-Object System.Windows.Thickness(0, 0, 0, 10)
-        $ht = New-Object System.Windows.Controls.TextBlock; $ht.Text = "📅 Calendar & Agenda"; $ht.FontSize = 14; $ht.FontWeight = 'Bold'; $ht.Foreground = Get-Brush "#FFFFFF"
-        $btnX = New-Object System.Windows.Controls.Button; $btnX.Content = "✕"; $btnX.HorizontalAlignment = 'Right'; $btnX.Background = [System.Windows.Media.Brushes]::Transparent; $btnX.Foreground = Get-Brush "#9B9BA7"; $btnX.BorderThickness = New-Object System.Windows.Thickness(0); $btnX.Cursor = [System.Windows.Input.Cursors]::Hand; $btnX.FontSize = 14
-        $closeCal = { param($s, $e) $calWin.Close() }
-        $btnX.Add_PreviewMouseLeftButtonUp($closeCal)
-        $btnX.Add_Click($closeCal)
+        $headGrid.Background = [System.Windows.Media.Brushes]::Transparent
+        $ht = New-Object System.Windows.Controls.TextBlock; $ht.Text = "📅 Calendar & Agenda"; $ht.FontSize = 14; $ht.FontWeight = 'Bold'; $ht.Foreground = Get-Brush "#FFFFFF"; $ht.VerticalAlignment = 'Center'
+        
+        $headGrid.Add_MouseLeftButtonDown({
+            param($s, $e)
+            if ($script:calWin -and $e.ButtonState -eq [System.Windows.Input.MouseButtonState]::Pressed) {
+                $script:calWin.DragMove()
+            }
+        })
+
+        $btnX = New-Object System.Windows.Controls.Border
+        $btnX.Width = 28; $btnX.Height = 28
+        $btnX.CornerRadius = New-Object System.Windows.CornerRadius(14)
+        $btnX.Background = Get-Brush "#20FFFFFF"
+        $btnX.Cursor = [System.Windows.Input.Cursors]::Hand
+        $btnX.HorizontalAlignment = 'Right'
+        $xTxt = New-Object System.Windows.Controls.TextBlock; $xTxt.Text = "✕"; $xTxt.FontSize = 13; $xTxt.FontWeight = 'Bold'; $xTxt.Foreground = Get-Brush "#FFFFFF"; $xTxt.HorizontalAlignment = 'Center'; $xTxt.VerticalAlignment = 'Center'
+        $btnX.Child = $xTxt
+        $btnX.Add_PreviewMouseLeftButtonDown({
+            if ($script:calWin) { $script:calWin.Close() }
+        })
+
         [void]$headGrid.Children.Add($ht); [void]$headGrid.Children.Add($btnX)
         [System.Windows.Controls.Grid]::SetRow($headGrid, 0); [void]$grid.Children.Add($headGrid)
 
@@ -3440,116 +3550,55 @@ function Show-CalendarWindow {
         $ac3 = New-Object System.Windows.Controls.ColumnDefinition; $ac3.Width = New-Object System.Windows.GridLength(65)
         [void]$abGrid.ColumnDefinitions.Add($ac1); [void]$abGrid.ColumnDefinitions.Add($ac2); [void]$abGrid.ColumnDefinitions.Add($ac3)
 
-        $tbTime = New-Object System.Windows.Controls.TextBox
-        $tbTime.Text = (Get-Date).ToString("hh:mm tt")
-        $tbTime.Background = Get-Brush "#242434"; $tbTime.Foreground = Get-Brush "#FFFFFF"; $tbTime.BorderThickness = New-Object System.Windows.Thickness(0)
-        $tbTime.Padding = New-Object System.Windows.Thickness(6, 4, 6, 4); $tbTime.Margin = New-Object System.Windows.Thickness(0, 0, 6, 0); $tbTime.FontSize = 11
-        $tbTime.Add_GotFocus({ $tbTime.SelectAll() })
-        [System.Windows.Controls.Grid]::SetColumn($tbTime, 0); [void]$abGrid.Children.Add($tbTime)
+        $script:calTbTime = New-Object System.Windows.Controls.TextBox
+        $script:calTbTime.Text = (Get-Date).ToString("hh:mm tt")
+        $script:calTbTime.Background = Get-Brush "#242434"; $script:calTbTime.Foreground = Get-Brush "#FFFFFF"; $script:calTbTime.CaretBrush = Get-Brush "#FFFFFF"; $script:calTbTime.BorderThickness = New-Object System.Windows.Thickness(0)
+        $script:calTbTime.Padding = New-Object System.Windows.Thickness(6, 4, 6, 4); $script:calTbTime.Margin = New-Object System.Windows.Thickness(0, 0, 6, 0); $script:calTbTime.FontSize = 11
+        $script:calTbTime.Add_GotFocus({ $script:calTbTime.SelectAll() })
+        [System.Windows.Controls.Grid]::SetColumn($script:calTbTime, 0); [void]$abGrid.Children.Add($script:calTbTime)
 
-        $tbTitle = New-Object System.Windows.Controls.TextBox
-        $tbTitle.Text = "New Reminder"
-        $tbTitle.Background = Get-Brush "#242434"; $tbTitle.Foreground = Get-Brush "#FFFFFF"; $tbTitle.BorderThickness = New-Object System.Windows.Thickness(0)
-        $tbTitle.Padding = New-Object System.Windows.Thickness(8, 4, 8, 4); $tbTitle.Margin = New-Object System.Windows.Thickness(0, 0, 6, 0); $tbTitle.FontSize = 11
-        $tbTitle.Add_GotFocus({ $tbTitle.SelectAll() })
-        [System.Windows.Controls.Grid]::SetColumn($tbTitle, 1); [void]$abGrid.Children.Add($tbTitle)
+        $script:calTbTitle = New-Object System.Windows.Controls.TextBox
+        $script:calTbTitle.Text = "New Reminder"
+        $script:calTbTitle.Background = Get-Brush "#242434"; $script:calTbTitle.Foreground = Get-Brush "#FFFFFF"; $script:calTbTitle.CaretBrush = Get-Brush "#FFFFFF"; $script:calTbTitle.BorderThickness = New-Object System.Windows.Thickness(0)
+        $script:calTbTitle.Padding = New-Object System.Windows.Thickness(8, 4, 8, 4); $script:calTbTitle.Margin = New-Object System.Windows.Thickness(0, 0, 6, 0); $script:calTbTitle.FontSize = 11
+        $script:calTbTitle.Add_GotFocus({
+            if ($script:calTbTitle.Text -eq "New Reminder") {
+                $script:calTbTitle.SelectAll()
+            }
+        })
+        [System.Windows.Controls.Grid]::SetColumn($script:calTbTitle, 1); [void]$abGrid.Children.Add($script:calTbTitle)
 
-        $btnAdd = New-Object System.Windows.Controls.Button
-        $btnAdd.Content = "+ Add"; $btnAdd.Background = Get-Brush "#A78BFA"; $btnAdd.Foreground = Get-Brush "#000000"; $btnAdd.FontWeight = 'Bold'; $btnAdd.FontSize = 11; $btnAdd.BorderThickness = New-Object System.Windows.Thickness(0); $btnAdd.Cursor = [System.Windows.Input.Cursors]::Hand
+        $btnAdd = New-Object System.Windows.Controls.Border
+        $btnAdd.Height = 28
+        $btnAdd.CornerRadius = New-Object System.Windows.CornerRadius(6)
+        $btnAdd.Background = Get-Brush "#A78BFA"
+        $btnAdd.Cursor = [System.Windows.Input.Cursors]::Hand
+        $addTxt = New-Object System.Windows.Controls.TextBlock; $addTxt.Text = "+ Add"; $addTxt.FontSize = 11; $addTxt.FontWeight = 'Bold'; $addTxt.Foreground = Get-Brush "#000000"; $addTxt.HorizontalAlignment = 'Center'; $addTxt.VerticalAlignment = 'Center'
+        $btnAdd.Child = $addTxt
+        $btnAdd.Add_PreviewMouseLeftButtonDown({ Add-CalendarReminder })
         [System.Windows.Controls.Grid]::SetColumn($btnAdd, 2); [void]$abGrid.Children.Add($btnAdd)
+
         $addBar.Child = $abGrid
         [System.Windows.Controls.Grid]::SetRow($addBar, 1); [void]$grid.Children.Add($addBar)
 
         # Row 2: Agenda Events List
         $sv = New-Object System.Windows.Controls.ScrollViewer; $sv.VerticalScrollBarVisibility = 'Auto'
-        $listPanel = New-Object System.Windows.Controls.StackPanel
-        $sv.Content = $listPanel
+        $script:calListPanel = New-Object System.Windows.Controls.StackPanel
+        $sv.Content = $script:calListPanel
         [System.Windows.Controls.Grid]::SetRow($sv, 2); [void]$grid.Children.Add($sv)
 
-        $renderEvents = {
-            $listPanel.Children.Clear()
-            $curData = Get-IslandData
-            if ($curData.CalendarEvents) {
-                foreach ($ev in $curData.CalendarEvents) {
-                    $card = New-Object System.Windows.Controls.Border
-                    $card.Background = Get-Brush "#16161D"
-                    $card.BorderBrush = Get-Brush "#1AFFFFFF"
-                    $card.BorderThickness = New-Object System.Windows.Thickness(1)
-                    $card.CornerRadius = New-Object System.Windows.CornerRadius(8)
-                    $card.Margin = New-Object System.Windows.Thickness(0, 0, 0, 6)
-                    $card.Padding = New-Object System.Windows.Thickness(12, 8, 10, 8)
+        Refresh-CalendarList
 
-                    $cGrid = New-Object System.Windows.Controls.Grid
-                    $c1 = New-Object System.Windows.Controls.ColumnDefinition; $c1.Width = New-Object System.Windows.GridLength(85)
-                    $c2 = New-Object System.Windows.Controls.ColumnDefinition; $c2.Width = New-Object System.Windows.GridLength(1, [System.Windows.GridUnitType]::Star)
-                    $c3 = New-Object System.Windows.Controls.ColumnDefinition; $c3.Width = New-Object System.Windows.GridLength(30)
-                    [void]$cGrid.ColumnDefinitions.Add($c1); [void]$cGrid.ColumnDefinitions.Add($c2); [void]$cGrid.ColumnDefinitions.Add($c3)
-
-                    $tTime = New-Object System.Windows.Controls.TextBlock; $tTime.Text = $ev.Time; $tTime.FontSize = 11; $tTime.Foreground = Get-Brush "#A78BFA"; $tTime.FontWeight = 'SemiBold'; $tTime.VerticalAlignment = 'Center'; [System.Windows.Controls.Grid]::SetColumn($tTime, 0); [void]$cGrid.Children.Add($tTime)
-                    $tTit = New-Object System.Windows.Controls.TextBlock; $tTit.Text = $ev.Title; $tTit.FontSize = 11; $tTit.Foreground = Get-Brush "#FFFFFF"; $tTit.FontWeight = 'SemiBold'; $tTit.VerticalAlignment = 'Center'; [System.Windows.Controls.Grid]::SetColumn($tTit, 1); [void]$cGrid.Children.Add($tTit)
-
-                    # Delete Button
-                    $btnDel = New-Object System.Windows.Controls.Button; $btnDel.Content = "🗑"; $btnDel.FontSize = 11; $btnDel.Foreground = Get-Brush "#F87171"; $btnDel.Background = [System.Windows.Media.Brushes]::Transparent; $btnDel.BorderThickness = New-Object System.Windows.Thickness(0); $btnDel.Cursor = [System.Windows.Input.Cursors]::Hand; [System.Windows.Controls.Grid]::SetColumn($btnDel, 2); [void]$cGrid.Children.Add($btnDel)
-
-                    $targetId = $ev.Id
-                    $targetTitle = $ev.Title
-                    $delHandler = {
-                        param($s, $e)
-                        $d = Get-IslandData
-                        $newList = @()
-                        foreach ($x in $d.CalendarEvents) {
-                            if ($targetId -and $x.Id -eq $targetId) { continue }
-                            if (-not $targetId -and $x.Title -eq $targetTitle) { continue }
-                            $newList += $x
-                        }
-                        $d.CalendarEvents = $newList
-                        Save-IslandData $d
-                        & $renderEvents
-                        Update-TodayAgenda
-                    }
-                    $btnDel.Add_PreviewMouseLeftButtonUp($delHandler)
-                    $btnDel.Add_Click($delHandler)
-
-                    $card.Child = $cGrid
-                    [void]$listPanel.Children.Add($card)
-                }
-            }
-        }
-        & $renderEvents
-
-        # Add Action
-        $doAdd = {
-            if ($tbTitle.Text -and $tbTitle.Text.Trim() -ne "") {
-                $d = Get-IslandData
-                $newEvent = [pscustomobject]@{
-                    Id = [int](Get-Date -UFormat %s)
-                    Date = (Get-Date).ToString("yyyy-MM-dd")
-                    Time = $tbTime.Text.Trim()
-                    Title = $tbTitle.Text.Trim()
-                    Category = "General"
-                }
-                $list = @($d.CalendarEvents) + @($newEvent)
-                $d.CalendarEvents = $list
-                Save-IslandData $d
-                $tbTitle.Text = "New Reminder"
-                & $renderEvents
-                Update-TodayAgenda
-            }
-        }
-
-        $btnAdd.Add_PreviewMouseLeftButtonUp({ param($s, $e) & $doAdd })
-        $btnAdd.Add_Click({ param($s, $e) & $doAdd })
-
-        # Allow pressing Enter in textboxes
-        $tbTitle.Add_KeyDown({ param($s, $e) if ($e.Key -eq 'Enter') { & $doAdd } })
-        $tbTime.Add_KeyDown({ param($s, $e) if ($e.Key -eq 'Enter') { & $doAdd } })
-        $calWin.Add_KeyDown({ param($s, $e) if ($e.Key -eq 'Escape') { $calWin.Close() } })
+        # Allow pressing Enter in textboxes to Add, and Esc to close
+        $script:calTbTitle.Add_KeyDown({ param($s, $e) if ($e.Key -eq 'Enter') { Add-CalendarReminder } })
+        $script:calTbTime.Add_KeyDown({ param($s, $e) if ($e.Key -eq 'Enter') { Add-CalendarReminder } })
+        $script:calWin.Add_KeyDown({ param($s, $e) if ($e.Key -eq 'Escape') { if ($script:calWin) { $script:calWin.Close() } } })
 
         $bdr.Child = $grid
-        $calWin.Content = $bdr
-        $calWin.Show()
-        $calWin.Activate()
-        $tbTitle.Focus()
+        $script:calWin.Content = $bdr
+        $script:calWin.Show()
+        $script:calWin.Activate()
+        $script:calTbTitle.Focus()
     } catch { }
 }
 
@@ -4318,6 +4367,12 @@ if ($btnReminderDismiss) {
     $btnReminderDismiss.Add_Click({ Dismiss-ReminderAlert })
 }
 
+# ------------------------------------------------------------------------------
+#  Reminder Alarms Engine (Exact Minute Match & 3-Minute Recurring Alerts)
+# ------------------------------------------------------------------------------
+$script:dismissedReminders = @{}
+$script:activeReminders = @{}
+
 function Check-ReminderAlarms {
     $now = [DateTime]::Now
     $nowStr12 = $now.ToString("hh:mm tt")
@@ -4327,6 +4382,23 @@ function Check-ReminderAlarms {
     $data = Get-IslandData
     if (-not $data -or -not $data.CalendarEvents) { return }
 
+        # Real-time AI Agent Approval Detection
+        if (-not $script:lastApprovalCheck -or ([DateTime]::Now - $script:lastApprovalCheck).TotalSeconds -ge 1.0) {
+            $script:lastApprovalCheck = [DateTime]::Now
+            $neededApproval = Check-AgentApprovalStatus
+            if ($neededApproval) {
+                if ($statusBadgeAntigravity) { $statusBadgeAntigravity.Text = "Action Required"; $statusBadgeAntigravity.Foreground = $script:brushAmber }
+                if ($statusDotAntigravity) { $statusDotAntigravity.Fill = $script:brushAmber }
+                Show-AgentAlert "Google Antigravity" $neededApproval
+            } else {
+                if ($script:agentAlertActive -and -not $script:simulatedAlert) {
+                    Dismiss-AgentAlert
+                    if ($statusBadgeAntigravity) { $statusBadgeAntigravity.Text = "Working"; $statusBadgeAntigravity.Foreground = $script:brushGreen }
+                    if ($statusDotAntigravity) { $statusDotAntigravity.Fill = $script:brushGreen }
+                }
+            }
+        }
+
     foreach ($ev in $data.CalendarEvents) {
         $evTime = ($ev.Time -replace '\s+', '').ToLower()
         $match12 = ($nowStr12 -replace '\s+', '').ToLower()
@@ -4334,10 +4406,10 @@ function Check-ReminderAlarms {
         $match24 = ($nowStr24 -replace '\s+', '').ToLower()
 
         $isMatch = ($evTime -eq $match12 -or $evTime -eq $matchShort -or $evTime -eq $match24)
+        $evId = if ($ev.Id) { $ev.Id.ToString() } else { $ev.Title }
 
         if ($isMatch) {
-            $evId = if ($ev.Id) { $ev.Id.ToString() } else { $ev.Title }
-            
+            # Skip if dismissed within the last 12 hours
             if ($script:dismissedReminders.ContainsKey($evId)) {
                 $dismissedAt = $script:dismissedReminders[$evId]
                 if (($now - $dismissedAt).TotalHours -lt 12.0) {
@@ -4345,15 +4417,9 @@ function Check-ReminderAlarms {
                 }
             }
 
-            if ($script:activeReminder -and $script:activeReminder.Id -eq $evId) {
-                # If 3 minutes have passed since last pop and not turned off, alert again!
-                if (($now - $script:activeReminder.LastAlert).TotalMinutes -ge 3.0) {
-                    $script:activeReminder.LastAlert = $now
-                    Show-ReminderAlert $ev
-                }
-            } else {
-                # Initial hit
-                $script:activeReminder = @{
+            # Trigger initial alarm if not already active
+            if (-not $script:activeReminders.ContainsKey($evId)) {
+                $script:activeReminders[$evId] = @{
                     Id = $evId
                     Event = $ev
                     TriggeredAt = $now
@@ -4361,22 +4427,116 @@ function Check-ReminderAlarms {
                 }
                 Show-ReminderAlert $ev
             }
-            break
+        }
+    }
+
+    # 3-minute recurring reminder check for un-dismissed reminders
+    foreach ($k in @($script:activeReminders.Keys)) {
+        $item = $script:activeReminders[$k]
+        if (($now - $item.LastAlert).TotalMinutes -ge 3.0) {
+            $item.LastAlert = $now
+            Show-ReminderAlert $item.Event
         }
     }
 }
 
+function Show-ReminderAlert ($ev) {
+    if ($reminderAlertBar) {
+        if ($reminderAlertTitle) { $reminderAlertTitle.Text = $ev.Title }
+        if ($reminderAlertTime) { $reminderAlertTime.Text = $ev.Time }
+        $compactBar.Visibility = 'Collapsed'
+        if ($agentAlertBar) { $agentAlertBar.Visibility = 'Collapsed' }
+        $reminderAlertBar.Visibility = 'Visible'
+        
+        # Expand width to show full reminder details nicely
+        if (-not $script:isExpanded) {
+            $animW = New-Object System.Windows.Media.Animation.DoubleAnimation
+            $animW.To = 460.0
+            $animW.Duration = [TimeSpan]::FromMilliseconds(200)
+            $glowBorder.BeginAnimation([System.Windows.Controls.Border]::WidthProperty, $animW)
+        }
+    }
+}
+
+function Dismiss-ReminderAlert {
+    $now = [DateTime]::Now
+    foreach ($k in @($script:activeReminders.Keys)) {
+        $script:dismissedReminders[$k] = $now
+    }
+    $script:activeReminders.Clear()
+
+    if ($reminderAlertBar) {
+        $reminderAlertBar.Visibility = 'Collapsed'
+        $compactBar.Visibility = 'Visible'
+        if (-not $script:isExpanded) {
+            $animW = New-Object System.Windows.Media.Animation.DoubleAnimation
+            $animW.To = $Config.IslandWidth
+            $animW.Duration = [TimeSpan]::FromMilliseconds(200)
+            $glowBorder.BeginAnimation([System.Windows.Controls.Border]::WidthProperty, $animW)
+        }
+    }
+}
+
+if ($btnReminderDismiss) {
+    $btnReminderDismiss.Add_PreviewMouseLeftButtonDown({ Dismiss-ReminderAlert })
+}
+
+# ------------------------------------------------------------------------------
+#  Real-time AI Agent Approval Detector (Antigravity & Developer Tools)
+# ------------------------------------------------------------------------------
+$script:lastApprovalCheck = $null
+$script:agentAlertActive = $false
+$script:simulatedAlert = $false
+
+function Check-AgentApprovalStatus {
+    try {
+        $brainBase = "C:\Users\abhis\.gemini\antigravity\brain"
+        if (Test-Path $brainBase) {
+            $latest = Get-ChildItem -Path $brainBase -Filter "transcript.jsonl" -Recurse -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+            if ($latest) {
+                $fs = [System.IO.File]::Open($latest.FullName, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+                $len = $fs.Length
+                $readBytes = [Math]::Min($len, 8192)
+                if ($readBytes -gt 0) {
+                    $null = $fs.Seek(-$readBytes, [System.IO.SeekOrigin]::End)
+                    $buf = New-Object byte[] $readBytes
+                    $readCount = $fs.Read($buf, 0, $readBytes)
+                    $fs.Close()
+                    $tailText = [System.Text.Encoding]::UTF8.GetString($buf, 0, $readCount)
+
+                    $lines = $tailText.Split("`n") | Where-Object { $_.Trim() -ne "" }
+                    if ($lines.Length -gt 0) {
+                        $last = $lines[-1]
+                        if ($last -match '"type"\s*:\s*"PLANNER_RESPONSE"' -and ($last -match 'BypassSandbox' -or $last -match 'ask_question')) {
+                            $desc = "Approval required: Execute command"
+                            if ($last -match '"toolSummary"\s*:\s*"([^"]+)"') {
+                                $desc = "Approval required: " + $matches[1]
+                            }
+                            return $desc
+                        }
+                    }
+                } else {
+                    $fs.Close()
+                }
+            }
+        }
+    } catch { }
+    return $null
+}
+
 function Show-AgentAlert ([string]$agentName, [string]$actionPrompt) {
+    $script:agentAlertActive = $true
     if ($agentAlertBar) {
         if ($agentAlertName) { $agentAlertName.Text = $agentName }
         if ($agentAlertText) { $agentAlertText.Text = $actionPrompt }
         $compactBar.Visibility = 'Collapsed'
+        if ($reminderAlertBar) { $reminderAlertBar.Visibility = 'Collapsed' }
         $agentAlertBar.Visibility = 'Visible'
         
-        # If collapsed, expand slightly to ensure full message visibility
+        # If collapsed, expand width slightly so full message and action buttons are visible
         if (-not $script:isExpanded) {
             $animW = New-Object System.Windows.Media.Animation.DoubleAnimation
-            $animW.To = 440.0
+            $animW.To = 460.0
             $animW.Duration = [TimeSpan]::FromMilliseconds(200)
             $glowBorder.BeginAnimation([System.Windows.Controls.Border]::WidthProperty, $animW)
         }
@@ -4384,6 +4544,8 @@ function Show-AgentAlert ([string]$agentName, [string]$actionPrompt) {
 }
 
 function Dismiss-AgentAlert {
+    $script:agentAlertActive = $false
+    $script:simulatedAlert = $false
     if ($agentAlertBar) {
         $agentAlertBar.Visibility = 'Collapsed'
         $compactBar.Visibility = 'Visible'
@@ -4397,8 +4559,7 @@ function Dismiss-AgentAlert {
 }
 
 if ($btnAlertApprove) {
-    $btnAlertApprove.Add_PreviewMouseLeftButtonUp({
-        param($s, $e)
+    $btnAlertApprove.Add_PreviewMouseLeftButtonDown({
         Dismiss-AgentAlert
         if ($statusBadgeAntigravity) { $statusBadgeAntigravity.Text = "Working"; $statusBadgeAntigravity.Foreground = $script:brushGreen }
         if ($statusDotAntigravity) { $statusDotAntigravity.Fill = $script:brushGreen }
@@ -4406,8 +4567,7 @@ if ($btnAlertApprove) {
 }
 
 if ($btnAlertReject) {
-    $btnAlertReject.Add_PreviewMouseLeftButtonUp({
-        param($s, $e)
+    $btnAlertReject.Add_PreviewMouseLeftButtonDown({
         Dismiss-AgentAlert
         if ($statusBadgeAntigravity) { $statusBadgeAntigravity.Text = "Idle"; $statusBadgeAntigravity.Foreground = $script:brushInactiveFg }
         if ($statusDotAntigravity) { $statusDotAntigravity.Fill = $script:brushInactiveFg }
@@ -4415,13 +4575,14 @@ if ($btnAlertReject) {
 }
 
 if ($btnSimulateAlert) {
-    $btnSimulateAlert.Add_PreviewMouseLeftButtonUp({
-        param($s, $e)
+    $btnSimulateAlert.Add_PreviewMouseLeftButtonDown({
+        $script:simulatedAlert = $true
         if ($statusBadgeAntigravity) { $statusBadgeAntigravity.Text = "Action Required"; $statusBadgeAntigravity.Foreground = $script:brushAmber }
         if ($statusDotAntigravity) { $statusDotAntigravity.Fill = $script:brushAmber }
         Show-AgentAlert "Google Antigravity" "Approval required: Execute project build?"
     })
 }
+
 
 function Render-AppsList {
     if (-not $appsPinnedContainer) { return }
