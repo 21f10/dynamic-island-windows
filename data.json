@@ -1,0 +1,46 @@
+{
+  "Favorites": [
+    { "Category": "Dev", "Title": "GitHub", "Url": "https://github.com", "Icon": "💻" },
+    { "Category": "Dev", "Title": "Stack Overflow", "Url": "https://stackoverflow.com", "Icon": "📚" },
+    { "Category": "Dev", "Title": "ChatGPT", "Url": "https://chatgpt.com", "Icon": "✨" },
+    { "Category": "Dev", "Title": "Claude", "Url": "https://claude.ai", "Icon": "🤖" },
+    { "Category": "Media", "Title": "YouTube", "Url": "https://youtube.com", "Icon": "🎬" },
+    { "Category": "Media", "Title": "Spotify Web", "Url": "https://open.spotify.com", "Icon": "🎵" },
+    { "Category": "Media", "Title": "Netflix", "Url": "https://netflix.com", "Icon": "🍿" },
+    { "Category": "Social", "Title": "Twitter / X", "Url": "https://x.com", "Icon": "🐦" },
+    { "Category": "Social", "Title": "Reddit", "Url": "https://reddit.com", "Icon": "💬" },
+    { "Category": "Social", "Title": "Discord", "Url": "https://discord.com", "Icon": "🎮" },
+    { "Category": "Tools", "Title": "Speedtest", "Url": "https://speedtest.net", "Icon": "⚡" },
+    { "Category": "Tools", "Title": "Figma", "Url": "https://figma.com", "Icon": "🎨" }
+  ],
+  "CalendarEvents": [
+    { "Id": 1, "Date": "2026-11-10", "Time": "10:00 AM", "Title": "Sprint Standup & Architecture Sync", "Category": "Work" },
+    { "Id": 2, "Date": "2026-11-10", "Time": "02:30 PM", "Title": "AI Agent Telemetry Review", "Category": "Dev" },
+    { "Id": 3, "Date": "2026-11-10", "Time": "06:00 PM", "Title": "Gym Workout & Cardio", "Category": "Personal" },
+    { "Id": 4, "Date": "2026-11-11", "Time": "11:00 AM", "Title": "Full-Stack Deployment", "Category": "Dev" },
+    { "Id": 5, "Date": "2026-11-12", "Time": "04:00 PM", "Title": "Team Retrospective", "Category": "Work" }
+  ],
+  "ClipboardHistory": [
+    { "Id": 1, "Text": "git push -u origin main", "Time": "14:20", "Pinned": true },
+    { "Id": 2, "Text": "https://github.com/21f10/dynamic-island-windows.git", "Time": "15:05", "Pinned": true },
+    { "Id": 3, "Text": "WS_EX_NOACTIVATE = 0x08000000", "Time": "15:15", "Pinned": false },
+    { "Id": 4, "Text": "Add-Type -ReferencedAssemblies System.Drawing", "Time": "15:30", "Pinned": false }
+  ],
+  "Todos": [
+    { "Id": 1, "Text": "Implement 4-State Spatial Interaction Model", "Done": true },
+    { "Id": 2, "Text": "Build NotchPixel AI Agent Monitor", "Done": true },
+    { "Id": 3, "Text": "Implement Live Hardware Equalizer & Process Tracker", "Done": true },
+    { "Id": 4, "Text": "Integrate LRCLIB Synchronized Lyrics", "Done": true },
+    { "Id": 5, "Text": "Construct 4x4 Circular App Launcher Grid", "Done": true },
+    { "Id": 6, "Text": "Spawn Standalone URL Favorites, Calendar, & Clipboard Windows", "Done": true }
+  ],
+  "Memos": [
+    { "Id": 1, "Title": "NotchPixel Architecture", "Content": "Dynamic Island 4-State Model: Idle (320x32) -> Hover (440x56) -> Expanded (520x420) -> Max-Expanded (780x560)." }
+  ],
+  "AIAgentStats": {
+    "Claude": { "Name": "Claude Max", "Model": "Claude 3.7 Sonnet", "FiveHourPct": 58, "WeeklyPct": 74, "Tokens": "14.2M tokens", "Cost": "$9.45", "Status": "Working" },
+    "Codex": { "Name": "Codex Plus", "Model": "GPT-4.5 Codex", "FiveHourPct": 24, "WeeklyPct": 42, "Tokens": "4.8M tokens", "Cost": "$3.12", "Status": "Waiting" },
+    "Cursor": { "Name": "Cursor Pro", "Model": "Claude 3.7 Pro", "FiveHourPct": 72, "WeeklyPct": 88, "Tokens": "26.4M tokens", "Cost": "$17.84", "Status": "Working" },
+    "Antigravity": { "Name": "Antigravity Pro", "Model": "Gemini 2.5 Pro", "FiveHourPct": 62, "WeeklyPct": 80, "Tokens": "19.1M tokens", "Cost": "$12.60", "Status": "Working" }
+  }
+}
