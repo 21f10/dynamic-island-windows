@@ -1587,17 +1587,11 @@ $xaml = [xml]@"
                       <ColumnDefinition Width="*"/>
                       <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-
-                    <!-- Alert Icon & Agent -->
                     <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                       <TextBlock Text="&#xE7BA;" FontFamily="Segoe MDL2 Assets" FontSize="13" Foreground="#F59E0B" Margin="0,0,6,0" VerticalAlignment="Center"/>
                       <TextBlock x:Name="AgentAlertName" Text="Antigravity" FontSize="11" FontWeight="Bold" Foreground="#F59E0B" VerticalAlignment="Center"/>
                     </StackPanel>
-
-                    <!-- Alert Message -->
                     <TextBlock x:Name="AgentAlertText" Grid.Column="1" Text="Permission required to run command" FontSize="10" Foreground="#FDE68A" Margin="8,0" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-
-                    <!-- Action Buttons -->
                     <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                       <Button x:Name="BtnAlertApprove" Content="✓ Submit" Background="#059669" Foreground="#FFFFFF" BorderThickness="0"
                               Padding="8,3" FontSize="10" FontWeight="Bold" Cursor="Hand" Focusable="False" Margin="0,0,6,0">
@@ -1620,6 +1614,34 @@ $xaml = [xml]@"
                         </Button.Template>
                       </Button>
                     </StackPanel>
+                  </Grid>
+                </Border>
+              </Grid>
+
+              <!-- Reminder Alarm Notification Bar (Overlays Notch when a reminder hits) -->
+              <Grid x:Name="ReminderAlertBar" Height="38" Background="#1E0D1B" Margin="2,0" Visibility="Collapsed">
+                <Border BorderBrush="#F43F5E" BorderThickness="1" CornerRadius="19" Padding="12,0">
+                  <Grid>
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="Auto"/>
+                      <ColumnDefinition Width="*"/>
+                      <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                      <TextBlock Text="&#xEA8F;" FontFamily="Segoe MDL2 Assets" FontSize="13" Foreground="#F43F5E" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                      <TextBlock x:Name="ReminderAlertTime" Text="5:00 PM" FontSize="11" FontWeight="Bold" Foreground="#F43F5E" VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <TextBlock x:Name="ReminderAlertTitle" Grid.Column="1" Text="Reminder" FontSize="11" FontWeight="SemiBold" Foreground="#FFFFFF" Margin="10,0" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                    <Button x:Name="BtnReminderDismiss" Grid.Column="2" Content="✕ Turn Off" Background="#E11D48" Foreground="#FFFFFF" BorderThickness="0"
+                            Padding="10,3" FontSize="10" FontWeight="Bold" Cursor="Hand" Focusable="False">
+                      <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                          <Border Background="{TemplateBinding Background}" CornerRadius="12" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                          </Border>
+                        </ControlTemplate>
+                      </Button.Template>
+                    </Button>
                   </Grid>
                 </Border>
               </Grid>
@@ -2685,6 +2707,12 @@ $tabBtnPower         = $window.FindName('TabBtnPower')
 $tabBtnAI              = $window.FindName('TabBtnAI')
 
 $agentAlertBar         = $window.FindName('AgentAlertBar')
+
+$reminderAlertBar      = $window.FindName('ReminderAlertBar')
+$reminderAlertTime     = $window.FindName('ReminderAlertTime')
+$reminderAlertTitle    = $window.FindName('ReminderAlertTitle')
+$btnReminderDismiss    = $window.FindName('BtnReminderDismiss')
+
 $agentAlertName        = $window.FindName('AgentAlertName')
 $agentAlertText        = $window.FindName('AgentAlertText')
 $btnAlertApprove       = $window.FindName('BtnAlertApprove')
@@ -3367,9 +3395,9 @@ function Show-CalendarWindow {
         $calWin.Topmost = $true
         $calWin.WindowStartupLocation = [System.Windows.WindowStartupLocation]::CenterScreen
 
+        # NOTE: Do NOT use ApplyNoActivate here so TextBoxes can receive keyboard focus and user can type!
         $calWin.Add_SourceInitialized({
             $hwnd = (New-Object System.Windows.Interop.WindowInteropHelper($calWin)).Handle
-            [IslandNative]::ApplyNoActivate($hwnd)
             [IslandNative]::EnableAcrylic($hwnd, 0xDD101016)
         })
 
@@ -3391,7 +3419,9 @@ function Show-CalendarWindow {
         $headGrid.Margin = New-Object System.Windows.Thickness(0, 0, 0, 10)
         $ht = New-Object System.Windows.Controls.TextBlock; $ht.Text = "📅 Calendar & Agenda"; $ht.FontSize = 14; $ht.FontWeight = 'Bold'; $ht.Foreground = Get-Brush "#FFFFFF"
         $btnX = New-Object System.Windows.Controls.Button; $btnX.Content = "✕"; $btnX.HorizontalAlignment = 'Right'; $btnX.Background = [System.Windows.Media.Brushes]::Transparent; $btnX.Foreground = Get-Brush "#9B9BA7"; $btnX.BorderThickness = New-Object System.Windows.Thickness(0); $btnX.Cursor = [System.Windows.Input.Cursors]::Hand; $btnX.FontSize = 14
-        $btnX.Add_PreviewMouseLeftButtonUp({ param($s, $e) $calWin.Close() })
+        $closeCal = { param($s, $e) $calWin.Close() }
+        $btnX.Add_PreviewMouseLeftButtonUp($closeCal)
+        $btnX.Add_Click($closeCal)
         [void]$headGrid.Children.Add($ht); [void]$headGrid.Children.Add($btnX)
         [System.Windows.Controls.Grid]::SetRow($headGrid, 0); [void]$grid.Children.Add($headGrid)
 
@@ -3405,7 +3435,7 @@ function Show-CalendarWindow {
         $addBar.Margin = New-Object System.Windows.Thickness(0, 0, 0, 12)
 
         $abGrid = New-Object System.Windows.Controls.Grid
-        $ac1 = New-Object System.Windows.Controls.ColumnDefinition; $ac1.Width = New-Object System.Windows.GridLength(80)
+        $ac1 = New-Object System.Windows.Controls.ColumnDefinition; $ac1.Width = New-Object System.Windows.GridLength(85)
         $ac2 = New-Object System.Windows.Controls.ColumnDefinition; $ac2.Width = New-Object System.Windows.GridLength(1, [System.Windows.GridUnitType]::Star)
         $ac3 = New-Object System.Windows.Controls.ColumnDefinition; $ac3.Width = New-Object System.Windows.GridLength(65)
         [void]$abGrid.ColumnDefinitions.Add($ac1); [void]$abGrid.ColumnDefinitions.Add($ac2); [void]$abGrid.ColumnDefinitions.Add($ac3)
@@ -3414,12 +3444,14 @@ function Show-CalendarWindow {
         $tbTime.Text = (Get-Date).ToString("hh:mm tt")
         $tbTime.Background = Get-Brush "#242434"; $tbTime.Foreground = Get-Brush "#FFFFFF"; $tbTime.BorderThickness = New-Object System.Windows.Thickness(0)
         $tbTime.Padding = New-Object System.Windows.Thickness(6, 4, 6, 4); $tbTime.Margin = New-Object System.Windows.Thickness(0, 0, 6, 0); $tbTime.FontSize = 11
+        $tbTime.Add_GotFocus({ $tbTime.SelectAll() })
         [System.Windows.Controls.Grid]::SetColumn($tbTime, 0); [void]$abGrid.Children.Add($tbTime)
 
         $tbTitle = New-Object System.Windows.Controls.TextBox
         $tbTitle.Text = "New Reminder"
         $tbTitle.Background = Get-Brush "#242434"; $tbTitle.Foreground = Get-Brush "#FFFFFF"; $tbTitle.BorderThickness = New-Object System.Windows.Thickness(0)
         $tbTitle.Padding = New-Object System.Windows.Thickness(8, 4, 8, 4); $tbTitle.Margin = New-Object System.Windows.Thickness(0, 0, 6, 0); $tbTitle.FontSize = 11
+        $tbTitle.Add_GotFocus({ $tbTitle.SelectAll() })
         [System.Windows.Controls.Grid]::SetColumn($tbTitle, 1); [void]$abGrid.Children.Add($tbTitle)
 
         $btnAdd = New-Object System.Windows.Controls.Button
@@ -3448,7 +3480,7 @@ function Show-CalendarWindow {
                     $card.Padding = New-Object System.Windows.Thickness(12, 8, 10, 8)
 
                     $cGrid = New-Object System.Windows.Controls.Grid
-                    $c1 = New-Object System.Windows.Controls.ColumnDefinition; $c1.Width = New-Object System.Windows.GridLength(80)
+                    $c1 = New-Object System.Windows.Controls.ColumnDefinition; $c1.Width = New-Object System.Windows.GridLength(85)
                     $c2 = New-Object System.Windows.Controls.ColumnDefinition; $c2.Width = New-Object System.Windows.GridLength(1, [System.Windows.GridUnitType]::Star)
                     $c3 = New-Object System.Windows.Controls.ColumnDefinition; $c3.Width = New-Object System.Windows.GridLength(30)
                     [void]$cGrid.ColumnDefinitions.Add($c1); [void]$cGrid.ColumnDefinitions.Add($c2); [void]$cGrid.ColumnDefinitions.Add($c3)
@@ -3461,7 +3493,7 @@ function Show-CalendarWindow {
 
                     $targetId = $ev.Id
                     $targetTitle = $ev.Title
-                    $btnDel.Add_PreviewMouseLeftButtonUp({
+                    $delHandler = {
                         param($s, $e)
                         $d = Get-IslandData
                         $newList = @()
@@ -3474,7 +3506,9 @@ function Show-CalendarWindow {
                         Save-IslandData $d
                         & $renderEvents
                         Update-TodayAgenda
-                    })
+                    }
+                    $btnDel.Add_PreviewMouseLeftButtonUp($delHandler)
+                    $btnDel.Add_Click($delHandler)
 
                     $card.Child = $cGrid
                     [void]$listPanel.Children.Add($card)
@@ -3483,9 +3517,8 @@ function Show-CalendarWindow {
         }
         & $renderEvents
 
-        # Add Button Handler
-        $btnAdd.Add_PreviewMouseLeftButtonUp({
-            param($s, $e)
+        # Add Action
+        $doAdd = {
             if ($tbTitle.Text -and $tbTitle.Text.Trim() -ne "") {
                 $d = Get-IslandData
                 $newEvent = [pscustomobject]@{
@@ -3498,15 +3531,25 @@ function Show-CalendarWindow {
                 $list = @($d.CalendarEvents) + @($newEvent)
                 $d.CalendarEvents = $list
                 Save-IslandData $d
-                $tbTitle.Text = ""
+                $tbTitle.Text = "New Reminder"
                 & $renderEvents
                 Update-TodayAgenda
             }
-        })
+        }
+
+        $btnAdd.Add_PreviewMouseLeftButtonUp({ param($s, $e) & $doAdd })
+        $btnAdd.Add_Click({ param($s, $e) & $doAdd })
+
+        # Allow pressing Enter in textboxes
+        $tbTitle.Add_KeyDown({ param($s, $e) if ($e.Key -eq 'Enter') { & $doAdd } })
+        $tbTime.Add_KeyDown({ param($s, $e) if ($e.Key -eq 'Enter') { & $doAdd } })
+        $calWin.Add_KeyDown({ param($s, $e) if ($e.Key -eq 'Escape') { $calWin.Close() } })
 
         $bdr.Child = $grid
         $calWin.Content = $bdr
         $calWin.Show()
+        $calWin.Activate()
+        $tbTitle.Focus()
     } catch { }
 }
 
@@ -4218,6 +4261,111 @@ function Update-TodayAgenda {
 # ------------------------------------------------------------------------------
 #  Island Alert Notification System (Notch Overlay & One-Click Dismissal)
 # ------------------------------------------------------------------------------
+
+# ------------------------------------------------------------------------------
+#  Reminder Alarm Notification Engine (Exact Time & 3-Min Re-Alert)
+# ------------------------------------------------------------------------------
+$script:dismissedReminders = @{}
+$script:activeReminder = $null
+$script:lastReminderCheck = $null
+
+function Show-ReminderAlert ($ev) {
+    if ($reminderAlertBar) {
+        if ($reminderAlertTime) { $reminderAlertTime.Text = $ev.Time }
+        if ($reminderAlertTitle) { $reminderAlertTitle.Text = $ev.Title }
+        $compactBar.Visibility = 'Collapsed'
+        if ($agentAlertBar) { $agentAlertBar.Visibility = 'Collapsed' }
+        $reminderAlertBar.Visibility = 'Visible'
+
+        # Expand Notch width to fit alert
+        $animW = New-Object System.Windows.Media.Animation.DoubleAnimation
+        $animW.To = 460.0
+        $animW.Duration = [TimeSpan]::FromMilliseconds(200)
+        $glowBorder.BeginAnimation([System.Windows.Controls.Border]::WidthProperty, $animW)
+
+        try {
+            $islandGlow.Color = [System.Windows.Media.ColorConverter]::ConvertFromString("#F43F5E")
+            $islandGlow.BlurRadius = 36
+        } catch { }
+    }
+}
+
+function Dismiss-ReminderAlert {
+    if ($script:activeReminder) {
+        $evId = $script:activeReminder.Id
+        $script:dismissedReminders[$evId] = [DateTime]::Now
+        $script:activeReminder = $null
+    }
+    if ($reminderAlertBar) {
+        $reminderAlertBar.Visibility = 'Collapsed'
+        $compactBar.Visibility = 'Visible'
+
+        if (-not $script:isExpanded) {
+            $animW = New-Object System.Windows.Media.Animation.DoubleAnimation
+            $animW.To = $Config.IslandWidth
+            $animW.Duration = [TimeSpan]::FromMilliseconds(200)
+            $glowBorder.BeginAnimation([System.Windows.Controls.Border]::WidthProperty, $animW)
+        }
+        try {
+            $islandGlow.Color = [System.Windows.Media.ColorConverter]::ConvertFromString($Config.GlowColor)
+            $islandGlow.BlurRadius = 32
+        } catch { }
+    }
+}
+
+if ($btnReminderDismiss) {
+    $btnReminderDismiss.Add_PreviewMouseLeftButtonUp({ Dismiss-ReminderAlert })
+    $btnReminderDismiss.Add_Click({ Dismiss-ReminderAlert })
+}
+
+function Check-ReminderAlarms {
+    $now = [DateTime]::Now
+    $nowStr12 = $now.ToString("hh:mm tt")
+    $nowStrShort = $now.ToString("h:mm tt")
+    $nowStr24 = $now.ToString("HH:mm")
+
+    $data = Get-IslandData
+    if (-not $data -or -not $data.CalendarEvents) { return }
+
+    foreach ($ev in $data.CalendarEvents) {
+        $evTime = ($ev.Time -replace '\s+', '').ToLower()
+        $match12 = ($nowStr12 -replace '\s+', '').ToLower()
+        $matchShort = ($nowStrShort -replace '\s+', '').ToLower()
+        $match24 = ($nowStr24 -replace '\s+', '').ToLower()
+
+        $isMatch = ($evTime -eq $match12 -or $evTime -eq $matchShort -or $evTime -eq $match24)
+
+        if ($isMatch) {
+            $evId = if ($ev.Id) { $ev.Id.ToString() } else { $ev.Title }
+            
+            if ($script:dismissedReminders.ContainsKey($evId)) {
+                $dismissedAt = $script:dismissedReminders[$evId]
+                if (($now - $dismissedAt).TotalHours -lt 12.0) {
+                    continue
+                }
+            }
+
+            if ($script:activeReminder -and $script:activeReminder.Id -eq $evId) {
+                # If 3 minutes have passed since last pop and not turned off, alert again!
+                if (($now - $script:activeReminder.LastAlert).TotalMinutes -ge 3.0) {
+                    $script:activeReminder.LastAlert = $now
+                    Show-ReminderAlert $ev
+                }
+            } else {
+                # Initial hit
+                $script:activeReminder = @{
+                    Id = $evId
+                    Event = $ev
+                    TriggeredAt = $now
+                    LastAlert = $now
+                }
+                Show-ReminderAlert $ev
+            }
+            break
+        }
+    }
+}
+
 function Show-AgentAlert ([string]$agentName, [string]$actionPrompt) {
     if ($agentAlertBar) {
         if ($agentAlertName) { $agentAlertName.Text = $agentName }
@@ -4964,6 +5112,13 @@ function Update-ClockAndBattery {
 }
 
 $uiTimer.Add_Tick({
+
+        # Check Reminder Alarms
+        if (-not $script:lastReminderCheck -or ([DateTime]::Now - $script:lastReminderCheck).TotalSeconds -ge 1.0) {
+            $script:lastReminderCheck = [DateTime]::Now
+            Check-ReminderAlarms
+        }
+
 
         # Update Disk, Net, Lyrics Telemetry
         if ($script:sharedState) {
