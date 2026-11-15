@@ -31,8 +31,8 @@
                  "Controls":  true,
                  "Power":  true
              },
-    "X":  567,
-    "Y":  46,
+    "X":  573,
+    "Y":  15,
     "MediaPopupMs":  4000,
     "GlassMode":  true,
     "DockEdge":  "Custom",
