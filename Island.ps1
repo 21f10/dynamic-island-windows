@@ -4708,12 +4708,22 @@ function Check-AgentApprovalStatus {
             $lines = $tailText.Split("`n") | Where-Object { $_.Trim() -ne "" }
             if ($lines.Length -gt 0) {
                 $last = $lines[-1]
-                if ($last -match '"type"\s*:\s*"PLANNER_RESPONSE"' -and ($last -match 'BypassSandbox' -or $last -match 'ask_question')) {
-                    $desc = "Approval required: Execute command"
-                    if ($last -match '"toolSummary"\s*:\s*"([^"]+)"') {
-                        $desc = "Approval required: " + $matches[1]
+                # Only trigger if the latest turn is actively pending user confirmation
+                if ($last -match '"type"\s*:\s*"PLANNER_RESPONSE"') {
+                    $isAskTool = ($last -match '"name"\s*:\s*"ask_question"')
+                    $isBypassTool = ($last -match '"name"\s*:\s*"run_command"' -and $last -match '"BypassSandbox"\s*:\s*("true"|true)')
+
+                    if ($isAskTool -or $isBypassTool) {
+                        $desc = "Approval required: Execute action"
+                        if ($last -match '"toolSummary"\s*:\s*\\?"([^\\"
+]+)') {
+                            $cleanSummary = $matches[1].Trim()
+                            if ($cleanSummary -ne "" -and $cleanSummary -ne "\") {
+                                $desc = "Approval required: " + $cleanSummary
+                            }
+                        }
+                        return $desc
                     }
-                    return $desc
                 }
             }
         } else {
